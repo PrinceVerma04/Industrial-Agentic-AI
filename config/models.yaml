@@ -1,0 +1,104 @@
+# Declarative model manifest.
+# Adding a new open-weight model = adding a block here. No code changes.
+# vram_gb is the measured resident footprint, used by the ModelManager to
+# decide what can be co-loaded on a 16 GB card.
+
+profiles:
+  current:      # works with what is already pulled on this machine today
+    vram_budget_gb: 13.5
+    models: [reason_32b]
+  venue:        # single consumer GPU (this machine: RTX 5080, 16 GB)
+    vram_budget_gb: 13.5
+    models: [reason, code, vision, utility, embed]
+  datacenter:   # if 120B-class hardware is available
+    vram_budget_gb: 80
+    models: [reason_xl, code, vision, utility, embed]
+
+models:
+  - id: reason_32b
+    tag: qwen2.5:32b
+    backend: ollama
+    capabilities: [reason, plan, doc, summarize, extract, classify, route, code, vision]
+    vram_gb: 13.0          # 19GB q4 weights; Ollama offloads the remainder to CPU
+    ctx: 16384
+    priority: 1
+
+  - id: reason
+    tag: qwen3:14b
+    backend: ollama
+    capabilities: [reason, plan, doc, summarize]
+    vram_gb: 11.0
+    ctx: 32768
+    priority: 10
+
+  - id: reason_small
+    tag: qwen3:8b
+    backend: ollama
+    capabilities: [reason, plan, doc, summarize]
+    vram_gb: 7.0
+    ctx: 32768
+    priority: 5
+
+  - id: reason_xl
+    tag: gpt-oss:20b
+    backend: ollama
+    capabilities: [reason, plan, doc, summarize]
+    vram_gb: 14.0
+    ctx: 32768
+    priority: 20
+
+  - id: code
+    tag: qwen2.5-coder:7b
+    backend: ollama
+    capabilities: [code]
+    vram_gb: 6.0
+    ctx: 32768
+    priority: 10
+
+  - id: vision
+    tag: qwen2.5vl:7b
+    backend: ollama
+    capabilities: [vision, ocr_assist]
+    vram_gb: 8.0
+    ctx: 16384
+    priority: 10
+
+  - id: utility
+    tag: qwen3:4b
+    backend: ollama
+    capabilities: [extract, classify, route, summarize]
+    vram_gb: 4.0
+    ctx: 16384
+    priority: 10
+
+  - id: embed
+    tag: bge-m3
+    backend: ollama
+    capabilities: [embed]
+    vram_gb: 1.2
+    ctx: 8192
+    priority: 10
+
+# Task -> required capability. The router maps a request to one of these.
+tasks:
+  code:      code
+  vision:    vision
+  extract:   extract
+  classify:  classify
+  reason:    reason
+  plan:      plan
+  doc:       doc
+  summarize: summarize
+  embed:     embed
+
+# Per-task generation options. Reasoning tokens buy nothing when the output is
+# schema-constrained JSON, and an uncapped model will ramble instead. Measured
+# on qwen3:14b: 11.0s default -> 3.0s with think:false.
+task_options:
+  classify:  {think: false, num_predict: 64,   num_ctx: 4096}
+  extract:   {think: false, num_predict: 1200, num_ctx: 8192}
+  plan:      {think: false, num_predict: 900,  num_ctx: 8192}
+  summarize: {think: false, num_predict: 700,  num_ctx: 8192}
+  doc:       {think: false, num_predict: 900,  num_ctx: 8192}
+  reason:    {think: false, num_predict: 900,  num_ctx: 8192}
+  code:      {think: false, num_predict: 1200, num_ctx: 8192}

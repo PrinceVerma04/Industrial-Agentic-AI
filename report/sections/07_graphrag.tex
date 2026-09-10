@@ -1,0 +1,196 @@
+\section{Graph RAG}
+\label{sec:graphrag}
+
+\subsection{Why conventional RAG is insufficient}
+
+Standard retrieval-augmented generation embeds text chunks and retrieves those
+nearest a query. This works for lookup questions and fails for three classes of
+question that dominate industrial use.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}X l l@{}}
+\toprule
+\textbf{Question} & \textbf{Requires} & \textbf{Vector search} \\
+\midrule
+What does the SOP say about pump lubrication? & lookup & \tick\ works \\
+If we isolate P-101A, what is affected downstream? & traversal & \cross\ fails \\
+Which vendors supplied valves in corrosion incidents since 2021? & join & \cross\ fails \\
+What are the recurring failure themes across five years? & aggregation & \cross\ fails \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The failure is structural, not a matter of tuning. Consider the corpus fragment
+\code{P-101A --FEEDS--> E-204} and \code{E-204 --FEEDS--> V-1201}. The query
+``what is affected if P-101A is isolated'' must return V-1201. But V-1201 never
+appears in any sentence containing P-101A, so no embedding of the query is near
+any chunk mentioning V-1201. Similarity is not connectivity. Increasing $k$,
+changing the embedding model, or reranking cannot fix this; the information
+required is in the \emph{topology}, which embeddings discard.
+
+\begin{keybox}{A P\&ID is already a graph}
+The strongest argument for this approach in an industrial setting is that
+piping and instrumentation diagrams are graphs by construction: equipment are
+nodes, process lines are edges. Flattening them into embeddings destroys the
+structure the document was drawn to express. Extracting a graph does not
+impose a foreign abstraction --- it recovers the native one.
+\end{keybox}
+
+\subsection{The ontology}
+
+Constraining extraction to a closed schema is the single largest quality lever.
+Free-form extraction produces a graph in which ``Pump 101A'', ``P-101A'' and
+``the main feed pump'' are three unrelated nodes, and every traversal returns a
+fragment of the truth.
+
+The schema is a configuration artefact, selected by an environment variable:
+
+\begin{lstlisting}[language=yamlx]
+packs:
+  general:                       # domain-neutral: any corpus
+    nodes:
+      Person:       [role, affiliation, email]
+      Concept:      [definition, domain]
+      Technology:   [category, vendor]
+      Publication:  [venue, year, doi]
+      ...
+    relations:
+      AUTHORED_BY:  [[Document, Person], [Publication, Person]]
+      PART_OF:      [[Section, Document], [Project, Organization]]
+
+  industrial:                    # refinery / plant extension
+    nodes:
+      Equipment:    [tag, equip_type, unit, description]
+      Instrument:   [tag, instr_type, measures, unit]
+    tagged: [Equipment, Instrument, Line]
+    relations:
+      FEEDS:        [[Equipment, Equipment]]
+      PART_OF:      [[Equipment, Equipment]]
+\end{lstlisting}
+
+Three properties make this robust:
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Packs merge rather than overwrite.] \code{PART\_OF} is declared in both
+packs. The merged ontology retains every endpoint signature
+--- \code{Section$\rightarrow$Document}, \code{Project$\rightarrow$Organization}
+\emph{and} \code{Equipment$\rightarrow$Equipment} --- implemented as one
+relation table carrying multiple \code{FROM \ldots TO} pairs.
+\item[Cross-pack references degrade gracefully.] The industrial pack references
+\code{Person}, which lives in the general pack. Enabling industrial alone drops
+those signatures instead of failing to start.
+\item[Tagging is opt-in.] Only types listed under \code{tagged:} pass through
+identifier canonicalisation. A corpus of research papers is never forced
+through asset-tag parsing.
+\end{description}
+
+\subsection{Entity resolution}
+
+Identifier canonicalisation is where naive implementations quietly fail. The
+resolver normalises Unicode, removes stop words, maps spelled-out equipment
+nouns to their conventional function codes, and matches an ISA-5.1 shaped
+pattern anywhere in the string.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Surface form} & \textbf{Canonical key} \\
+\midrule
+\code{P-101A}, \code{P101A}, \code{PUMP-101A} & \code{Equipment:P-101A} \\
+\code{Pump 101-A}, \code{pump P101 A} & \code{Equipment:P-101A} \\
+\code{the main pump P-101 A} & \code{Equipment:P-101A} \\
+\code{centrifugal pump 101 A}, \code{Pump no. 101 A} & \code{Equipment:P-101A} \\
+\midrule
+\code{Exchanger 204}, \code{E-204}, \code{heat exchanger E204} & \code{Equipment:E-204} \\
+\code{Fire Water} & (not a tag --- name slug) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+All seven spellings of the first asset collapse to one node. During development
+a defect in this component --- a stop-word list that stripped a bare
+\code{A} --- silently split \code{P-101A} from \code{P-101}, fragmenting the
+graph without any error. It is now covered by regression tests.
+
+\subsection{Retrieval modes}
+\label{sec:modes}
+
+Query shape selects the strategy.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+\textbf{Mode} & \textbf{Trigger and mechanism} & \textbf{Answers} \\
+\midrule
+\code{vector} & no structural signal; BM25 + dense fused by RRF & lookup \\
+\code{local} & an identifier is present; one-hop neighbourhood + linked chunks & context \\
+\code{traverse} & impact vocabulary \emph{and} an identifier; three-hop walk & dependency \\
+\code{global} & corpus-wide vocabulary; map-reduce over community summaries & themes \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Measured behaviour on the indexed corpus:
+
+\begin{lstlisting}
+[traverse] If we isolate P-101A which downstream units are affected?
+           -> nodes=7  chunks=3   (V-1201 reached at two hops)
+[global  ] what are the recurring failure themes?
+           -> communities=2 consulted
+[local   ] what does the SOP say about P-101A
+           -> nodes=5  chunks=3   (V-1201 NOT present: one hop only)
+[vector  ] what is the bearing vibration alarm limit
+           -> chunks=3
+\end{lstlisting}
+
+The contrast between \code{traverse} and \code{local} is the demonstration: the
+same anchor entity, differing only in hop depth, and the indirect dependency
+appears only in the deeper walk.
+
+\subsection{Result on a general corpus}
+
+To validate that the ontology is genuinely domain-portable, a corpus containing
+three curricula vitae and a fifteen-page electronics journal article was
+indexed with \code{ONTOLOGY=general,industrial}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}l r l r@{}}
+\toprule
+\textbf{Node type} & \textbf{Count} & \textbf{Relation} & \textbf{Count} \\
+\midrule
+Person & 152 & AUTHORED\_BY & 158 \\
+Concept & 94 & MENTIONS & 83 \\
+Technology & 68 & HAS\_SKILL & 37 \\
+Skill & 35 & USES & 30 \\
+Publication & 28 & APPLIED\_TO & 13 \\
+Document & 26 & REPORTS\_METRIC & 12 \\
+Section & 17 & COMPARED\_WITH & 10 \\
+Organization & 14 & AFFILIATED\_WITH & 10 \\
+others & 65 & others & 38 \\
+\midrule
+\textbf{Total} & \textbf{499} & \textbf{Total} & \textbf{391} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Thirty-seven communities were detected and summarised. The industrial
+types remained near-empty, as expected for this corpus --- confirming that the
+packs neither interfere with one another nor force inappropriate structure onto
+the data.
+
+\subsection{A defect worth recording}
+
+The first generation of community summaries stated relationships backwards:
+the graph asserted \code{V-4401 PART\_OF P-101A} while the summary read
+``P-101A is a component of V-4401''. The cause was that the clustering graph
+was built with an undirected \code{networkx.Graph}, so edge orientation was
+lost before the summarisation prompt was rendered. Clustering legitimately
+requires an undirected view, but rendering does not. The graph is now
+constructed as a \code{DiGraph} and converted to undirected only for the Leiden
+step. In a system whose central claim is grounded accuracy, confidently
+reversed relationships are among the most damaging failures possible, and they
+produced no error of any kind.

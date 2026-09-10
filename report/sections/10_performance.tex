@@ -1,0 +1,131 @@
+\section{Measured Performance}
+
+All figures below were obtained on the reference machine: NVIDIA RTX~5080
+(16\,GB, \code{sm\_120}), 32 CPU cores, 59\,GB RAM, NVMe storage.
+
+\subsection{Interactive operations}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}X r l@{}}
+\toprule
+\textbf{Operation} & \textbf{Latency} & \textbf{Notes} \\
+\midrule
+Retrieval, all four modes & 20--60\,ms & graph traversal and hybrid search \\
+Graph neighbourhood, three hops & 22\,ms & K\`uzu, embedded \\
+Tool invocation (non-LLM) & 1--60\,ms & filesystem, calculation, document generation \\
+OCR, one scanned page & 2.4\,s & CPU, ONNX, GPU untouched \\
+Vision model, one page & 25\,s & includes model load and eviction \\
+Model swap (evict + load) & 5--10\,s & measured during the vision transition \\
+Full agent run, three steps & 45--85\,s & planning, execution, critique, synthesis \\
+Test suite, 61 tests & 0.95\,s & no model calls \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent Interactive latency is dominated by language-model generation, as
+expected. Retrieval is never the bottleneck --- a useful property, since it
+means richer retrieval can be afforded without hurting responsiveness.
+
+\subsection{Indexing throughput and its limitation}
+
+Indexing the reference corpus --- five documents, eighteen pages, 59 chunks ---
+took four hours and five minutes, an average of \textbf{250 seconds per chunk}.
+This is unacceptably slow and the cause was diagnosed rather than guessed.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Hypothesis} & \textbf{Verdict} & \textbf{Evidence} \\
+\midrule
+GPU throttling & rejected & 98\% utilisation, 73\,\textdegree C, 2850\,MHz sustained \\
+CPU offload & rejected & \code{/api/ps} shows 5.1\,GB weights fully resident \\
+Oversized chunks & rejected & uniform 1\,072 characters mean \\
+Generation volume & \textbf{confirmed} & 4\,759 characters of discarded reasoning per call \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+At approximately 70 tokens per second, 250 seconds implies on the order of
+17\,000 generated tokens per extraction call. Two causes are identified:
+
+\begin{enumerate}
+\item \textbf{Reasoning mode is enabled by default.} The utility model emits
+      thousands of chain-of-thought characters before the answer. When output
+      is schema-constrained JSON, this reasoning is discarded and buys nothing.
+\item \textbf{Generation is unbounded.} No \code{num\_predict} ceiling is set,
+      so a dense chunk against a 23-type ontology can produce an arbitrarily
+      long entity list.
+\end{enumerate}
+
+\begin{keybox}{Remediation applied and measured}
+Setting \code{think: false} and a \code{num\_predict} ceiling per task, exposed
+as a \code{task\_options} block in \code{config/models.yaml}, reduced extraction
+from 250 to \textbf{18.1 seconds per chunk} --- a \textbf{13.8$\times$}
+improvement. The reference corpus now indexes in roughly 18 minutes rather than
+four hours. A fourth cause was found alongside these: the agent loop ran a
+critique step even on its final permitted iteration, where the verdict cannot
+trigger a replan, discarding a full generation on every query.
+\end{keybox}
+
+\subsection{Effect of the remediation}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l r r r@{}}
+\toprule
+\textbf{Measurement} & \textbf{Before} & \textbf{After} & \textbf{Factor} \\
+\midrule
+Single call, \code{qwen3:14b} & 11.0\,s & 3.0\,s & 3.7$\times$ \\
+Reasoning characters per call & 2\,069 & 0 & --- \\
+LLM calls per query & 4 & 3 & --- \\
+Full agent run & 45--121\,s & \textbf{12.7\,s} & $\approx$5--9$\times$ \\
+Extraction per chunk & 250\,s & \textbf{18.1\,s} & \textbf{13.8}$\times$ \\
+59-chunk corpus & 4\,h\,05\,m & $\approx$18\,min & 13.6$\times$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Stage breakdown of the optimised 12.7\,s run: planning 7.1\,s,
+tool execution 1.1\,s, synthesis 4.6\,s. Planning is now the dominant cost, and
+is the correct place to spend further effort.
+
+\subsection{Why this matters less than it appears}
+
+Indexing is a one-time cost per document, not a per-query cost.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}X l@{}}
+\toprule
+\textbf{Action} & \textbf{Cost} \\
+\midrule
+First index of a document & the measured rate above \\
+Re-running the index over an unchanged corpus & seconds (all cache hits) \\
+Adding one document to an indexed corpus & that document's chunks only \\
+Answering a question & no extraction at all \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent The extraction cache is keyed on \code{sha256(prompt + model)} and
+persists across runs, so an interrupted build resumes rather than restarts.
+
+\subsection{Extraction yield}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}l r l@{}}
+\toprule
+\textbf{Quantity} & \textbf{Value} & \textbf{Derived} \\
+\midrule
+Chunks indexed & 59 & from 18 pages, $\approx3.3$ chunks per page \\
+Mean chunk size & 1\,072 chars & semantic boundaries respected \\
+Entity mentions extracted & 602 & 10.2 per chunk \\
+Unique nodes after resolution & 499 & 17\% merged by canonicalisation \\
+Typed relations & 391 & 6.6 per chunk \\
+Communities detected & 37 & Leiden, minimum size 3 \\
+\bottomrule
+\end{tabular}
+\end{center}

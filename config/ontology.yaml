@@ -1,0 +1,76 @@
+# Ontology packs. Select with ONTOLOGY= in .env (comma-separated, e.g.
+# "general" or "general,industrial"). Adding a domain = adding a pack here;
+# no code changes. Node names must be unique across enabled packs; relation
+# names may repeat and their endpoint pairs are merged.
+#
+# tagged: true  -> the type carries a structured identifier (an asset tag, a
+#                  DOI, a ticket id) and is canonicalised by pattern rather
+#                  than by name slug.
+
+packs:
+
+  general:
+    nodes:
+      Person:       [role, affiliation, email]
+      Organization: [org_type, sector, location]
+      Location:     [region, country]
+      Document:     [doc_type, title, revision, date]
+      Section:      [section_id, title]
+      Concept:      [definition, domain]
+      Technology:   [category, vendor]
+      Skill:        [category, level]
+      Project:      [status, started, ended]
+      Product:      [category, version]
+      Event:        [event_type, date, location]
+      Metric:       [value, unit, context]
+      Dataset:      [source, size, modality]
+      Publication:  [venue, year, doi]
+    relations:
+      AUTHORED_BY:      [[Document, Person], [Publication, Person]]
+      AFFILIATED_WITH:  [[Person, Organization]]
+      WORKED_ON:        [[Person, Project]]
+      HAS_SKILL:        [[Person, Skill]]
+      PARTICIPATED_IN:  [[Person, Event]]
+      LOCATED_IN:       [[Organization, Location], [Event, Location]]
+      PRODUCES:         [[Organization, Product], [Project, Product]]
+      USES:             [[Project, Technology], [Product, Technology],
+                         [Person, Technology]]
+      EVALUATED_ON:     [[Technology, Dataset]]
+      COMPARED_WITH:    [[Technology, Technology]]
+      APPLIED_TO:       [[Technology, Concept]]
+      REPORTS_METRIC:   [[Document, Metric], [Technology, Metric]]
+      DEFINES:          [[Document, Concept]]
+      MENTIONS:         [[Document, Concept], [Document, Technology],
+                         [Document, Organization], [Document, Person]]
+      CITES:            [[Document, Publication], [Publication, Publication]]
+      RELATED_TO:       [[Concept, Concept]]
+      PART_OF:          [[Section, Document], [Project, Organization]]
+      SUPERSEDES:       [[Document, Document]]
+
+  industrial:
+    nodes:
+      Equipment:    [tag, equip_type, unit, description]
+      Instrument:   [tag, instr_type, measures, unit]
+      Line:         [tag, size, service, from_tag, to_tag]
+      Procedure:    [proc_id, title, purpose]
+      Step:         [step_id, seq, text]
+      Spec:         [spec_id, parameter, value, unit]
+      Incident:     [incident_id, date, category, summary]
+      Material:     [grade, form]
+      Vendor:       [scope]
+    tagged: [Equipment, Instrument, Line]
+    relations:
+      CONNECTS_TO:            [[Equipment, Equipment]]
+      FEEDS:                  [[Equipment, Equipment]]
+      ISOLATED_BY:            [[Equipment, Equipment]]
+      MONITORED_BY:           [[Equipment, Instrument]]
+      GOVERNED_BY:            [[Equipment, Procedure]]
+      HAS_SPEC:               [[Equipment, Spec]]
+      MADE_OF:                [[Equipment, Material]]
+      SUPPLIED_BY:            [[Equipment, Vendor]]
+      AFFECTED_EQUIPMENT:     [[Incident, Equipment]]
+      CAUSED_BY:              [[Incident, Equipment]]
+      HAS_STEP:               [[Procedure, Step]]
+      REQUIRES_APPROVAL_FROM: [[Procedure, Person]]
+      PART_OF:                [[Equipment, Equipment]]
+      MENTIONED_IN:           [[Equipment, Document]]

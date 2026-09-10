@@ -1,0 +1,77 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sovereign AI Workbench</title>
+<style>
+:root{--bg:#0d1117;--pan:#161b22;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;--ok:#3fb950;--bad:#f85149;--acc:#58a6ff}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-sans-serif,system-ui;background:var(--bg);color:var(--fg)}
+header{padding:10px 16px;border-bottom:1px solid var(--bd);display:flex;gap:16px;align-items:center}
+h1{font-size:15px;margin:0;font-weight:600}
+.wrap{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px;height:calc(100vh - 49px)}
+.pan{background:var(--pan);border:1px solid var(--bd);border-radius:8px;padding:12px;overflow:auto}
+.pan h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0 0 10px}
+#log{white-space:pre-wrap;font:12px/1.55 ui-monospace,monospace}
+textarea{width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:13px ui-monospace,monospace;resize:vertical}
+button{background:var(--acc);color:#04121f;border:0;border-radius:6px;padding:7px 13px;font-weight:600;cursor:pointer}
+button.danger{background:var(--bad);color:#fff}
+.row{display:flex;gap:8px;margin-top:8px}
+.stat{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #21262d;font-size:12.5px}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}
+.badge{padding:2px 7px;border-radius:99px;font-size:11px;border:1px solid var(--bd);color:var(--mut)}
+.dec{font:11.5px ui-monospace,monospace;padding:4px 0;border-bottom:1px solid #21262d;color:var(--mut)}
+.dec b{color:var(--acc);font-weight:600}
+</style></head><body>
+<header><h1>Sovereign On-Premise Agentic AI Workbench</h1>
+<span class="badge" id="prof">profile —</span><span class="badge">SIH26117 · MRPL</span></header>
+<div class="wrap">
+  <div class="pan">
+    <h2>Task</h2>
+    <textarea id="goal" rows="3" placeholder="e.g. Which units are affected if P-101A is isolated? Draft an approval note."></textarea>
+    <div class="row"><button onclick="ask()">Run agent</button><button onclick="search()">Retrieve only</button></div>
+    <h2 style="margin-top:16px">Output</h2><div id="log">ready.</div>
+  </div>
+  <div>
+    <div class="pan" style="margin-bottom:12px">
+      <h2>Sovereignty</h2><div id="sov"></div>
+      <div class="row"><button class="danger" onclick="canary()">Attempt external call</button></div>
+    </div>
+    <div class="pan"><h2>Model routing</h2><div id="dec"></div></div>
+  </div>
+</div>
+<script>
+const API='', $=id=>document.getElementById(id);
+const j=async(u,o)=>(await fetch(API+u,o)).json();
+function line(k,v,cls){return `<div class="stat"><span>${k}</span><span class="${cls||''}">${v}</span></div>`}
+async function refresh(){
+  const s=await j('/sovereignty');
+  $('sov').innerHTML =
+    line('External connections', s.external_connections, s.external_connections?'bad':'ok')+
+    line('Blocked attempts', s.blocked_attempts)+
+    line('Sandbox', s.sandbox.docker?'docker':(s.sandbox.netns?'netns':'rlimit'), 'ok')+
+    line('Audit chain', s.audit_chain_valid?'VALID':'BROKEN', s.audit_chain_valid?'ok':'bad')+
+    line('Uptime', s.uptime_s+'s');
+  const m=await j('/models'); $('prof').textContent='profile '+m.profile;
+  $('dec').innerHTML=(m.decisions.slice(-12).reverse().map(d=>
+    `<div class="dec"><b>${d.task}</b> → ${d.tag}<br><span>${d.reason}</span></div>`).join(''))||'<div class="dec">no calls yet</div>';
+}
+async function ask(){
+  $('log').textContent='running…';
+  const r=await j('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({goal:$('goal').value})});
+  $('log').textContent=r.answer+'\n\n--- steps ---\n'+
+    r.steps.map(s=>`[${s.ok?'ok':'FAIL'}] ${s.tool} (${s.ms}ms) ${s.intent}`).join('\n')+
+    (r.artifacts.length?'\n\n--- artifacts ---\n'+r.artifacts.join('\n'):'');
+  refresh();
+}
+async function search(){
+  const r=await j('/search?q='+encodeURIComponent($('goal').value));
+  $('log').textContent=`mode: ${r.mode}\nwhy : ${r.why}\n\nGRAPH NODES\n`+
+    r.nodes.map(n=>`  [${n.type}] ${n.name}`).join('\n')+'\n\nPASSAGES\n'+
+    r.chunks.map(c=>`  [${c.doc_id} p.${c.page}] ${c.text.slice(0,160)}…`).join('\n');
+}
+async function canary(){
+  const r=await j('/sovereignty/canary',{method:'POST'});
+  $('log').textContent=`CANARY: ${r.verdict}\n${r.detail}\n(${r.ms}ms)\n\n`+
+    (r.blocked?'Egress is blocked — the sovereign claim holds.'
+              :'Reached the internet. Run: sudo ./scripts/04_lockdown.sh on');
+  refresh();
+}
+refresh(); setInterval(refresh,4000);
+</script></body></html>

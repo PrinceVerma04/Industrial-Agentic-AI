@@ -1,0 +1,119 @@
+\section{Implementation and Verification}
+
+\subsection{Rubric compliance}
+
+Each of the five demonstration requirements was executed and observed. The
+evidence below is drawn from actual runs, not from design intent.
+
+\subsubsection{Point 1 --- model auto-selection}
+\label{sec:router}
+
+Routing is two-stage: regular-expression heuristics resolve the majority of
+requests at zero cost, and a 4B classifier with constrained output is consulted
+only when confidence falls below threshold. Selection then passes to a manager
+that enforces a VRAM budget with least-recently-used eviction.
+
+\begin{lstlisting}
+resident before : ['reason'] 11.0GB / 13.5GB budget
+vision model    : qwen2.5vl:7b  (25s)
+resident after  : ['vision']  8.0GB
+
+ROUTER DECISION LOG
+  plan     -> qwen3:14b     highest-priority model with 'plan'
+  vision   -> qwen2.5vl:7b  fits 8.0GB in 13.5GB     evicted=['reason']
+\end{lstlisting}
+
+\noindent Two task types, two different models, and an observed eviction ---
+the requirement met literally. Adding a model is a block in
+\code{config/models.yaml}, satisfying ``addable later without redesigning the
+system''.
+
+\subsubsection{Point 2 --- agentic task end to end}
+\label{sec:agent}
+
+\begin{lstlisting}
+GOAL  determine which equipment is affected if P-101A is isolated,
+      then produce an approval note as a docx
+
+STEPS  graph_query          22 ms   identify connected equipment
+       calculate            51 ms   analyse isolation impact
+       make_approval_note   13 ms   generate formal note
+
+ARTEFACT  data/artifacts/seal_replacement_approval.docx
+\end{lstlisting}
+
+\noindent The generated document contains a title, subject block, numbered
+findings, a recommendation, a three-column approval signature table and a
+source-reference section --- populated from graph output, not invented.
+
+\subsubsection{Point 3 --- sandboxed code execution}
+\label{sec:sandbox}
+
+Verified above (\S\ref{sec:sovereignty}). Code runs, produces files, and cannot
+reach the network.
+
+\subsubsection{Point 4 --- multimodal understanding}
+\label{sec:multimodal}
+
+A synthetic scan with rotational skew and per-pixel noise was processed by both
+paths:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}l l l@{}}
+\toprule
+\textbf{Path} & \textbf{Time} & \textbf{Outcome} \\
+\midrule
+RapidOCR (CPU) & 2.4\,s & all asset tags recovered; \code{SOP} read as \code{SoP} \\
+Vision model (GPU) & 25\,s & tags plus the vibration reading, in context \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The case error illustrates why canonicalisation matters: raw OCR
+output is never trustworthy as an identifier without normalisation.
+
+\subsubsection{Point 5 --- sovereignty proof}
+
+Verified above: kernel isolation, egress denial, live monitor, canary and a
+verified audit chain.
+
+\subsection{Defects found by execution}
+
+Nine defects were discovered by running the system rather than by reading it.
+They are recorded here because several are non-obvious and all are now covered
+by tests.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}c X l@{}}
+\toprule
+\textbf{\#} & \textbf{Defect} & \textbf{Severity} \\
+\midrule
+1 & Node tables redeclared the built-in \code{name} column, so schema creation failed & blocking \\
+2 & A stop-word list stripped a bare \code{A}, silently splitting \code{P-101A} from \code{P-101} & \textbf{silent corruption} \\
+3 & Relations used bare \code{CREATE}; re-indexing duplicated every edge & data integrity \\
+4 & Vector points were keyed by offset; re-indexing appended a second copy of the corpus & data integrity \\
+5 & Planner-supplied arguments failed type checks, wasting whole iterations & functional \\
+6 & Steps could not reference earlier results, so documents contained invented placeholders & functional \\
+7 & Raw Python dictionaries were substituted into document prose & output quality \\
+8 & A failed step's stack trace was written into an approval note's findings & \textbf{severe} \\
+9 & Community summaries stated relationships backwards & \textbf{silent corruption} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{keybox}{The pattern worth noting}
+Defects 2, 8 and 9 produced no error. The system reported success while
+emitting wrong output --- a fragmented graph, a traceback presented as an
+engineering finding, and confidently reversed dependency claims. In a system
+whose value proposition is trustworthy grounding, silent wrongness is the
+failure mode that matters, and only execution reveals it.
+\end{keybox}
+
+\subsection{Test suite}
+
+Sixty-one tests execute in under one second, covering identifier
+canonicalisation, extraction validation against a hostile model response,
+routing, retrieval mode selection, sandbox isolation, filesystem jail escape,
+audit chain tampering, ontology pack merging and every defect listed above.

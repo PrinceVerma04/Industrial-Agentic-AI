@@ -1,0 +1,81 @@
+\section{Executive Summary}
+
+\subsection{The problem in one paragraph}
+
+An engineer at a refinery needs to read a scanned inspection report, cross-check
+it against the governing standard operating procedure, work out which downstream
+units are affected, and draft an approval note. Every artefact involved --- the
+piping and instrumentation diagram, the vendor correspondence, the financials,
+the unreleased design --- is confidential. Company policy forbids sending it to
+a cloud assistant. So the engineer either does the work by hand, losing hours,
+or pastes the material into a public tool anyway, creating exactly the exposure
+the policy exists to prevent.
+
+\subsection{What was built}
+
+A complete, working system that runs on one consumer GPU with no network
+connection. It comprises:
+
+\begin{itemize}
+\item a \term{model gateway} serving five open-weight models with automatic,
+      VRAM-aware selection driven by a declarative manifest;
+\item an \term{agent} that plans multi-step work, calls local tools, critiques
+      its own output and iterates;
+\item a \term{retrieval layer} combining dense vectors, sparse BM25 and a
+      typed \term{knowledge graph}, with four retrieval strategies chosen by
+      query shape;
+\item a \term{multimodal ingestion pipeline} handling text PDFs, scanned pages,
+      handwriting and engineering drawings;
+\item a \term{deliverable generator} producing genuine \code{.docx},
+      \code{.pptx} and \code{.xlsx} files, not chat transcripts;
+\item a \term{sovereignty subsystem} providing kernel-level network isolation,
+      a live egress monitor, a deliberate breach canary, and a hash-chained
+      tamper-evident audit log.
+\end{itemize}
+
+\subsection{Status at the time of writing}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l r X@{}}
+\toprule
+\textbf{Measure} & \textbf{Value} & \textbf{Note} \\
+\midrule
+Python source          & 3\,124 lines & 46 modules across 9 packages \\
+Automated tests        & 61 passing   & full suite runs in under 1 second \\
+Dependencies           & 99 packages  & all inside a project-local virtualenv \\
+Ontology               & 23 node types & 31 relation types, 43 endpoint signatures \\
+Open-weight models     & 5            & approximately 24\,GB of weights \\
+Knowledge graph        & 499 nodes    & 391 typed relations from a 5-document corpus \\
+Community summaries    & 37           & enables corpus-wide thematic queries \\
+Verified rubric points & 5 of 5       & each demonstrated, not asserted \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{The three claims that distinguish this work}
+
+\begin{keybox}{1. Sovereignty is demonstrated, not claimed}
+The problem statement is explicit that proof --- not assertion --- is what
+counts. Generated code executes inside an unprivileged network namespace where
+a connection attempt to \code{1.1.1.1:53} returns
+\code{OSError: Network is unreachable}. This is a kernel guarantee, not a
+policy setting, and it was verified experimentally.
+\end{keybox}
+
+\begin{keybox}{2. Graph RAG answers questions vector search structurally cannot}
+``If we isolate P-101A, which downstream units are affected?'' requires
+traversal. Similarity is not connectivity. A two-hop dependency shares no
+vocabulary with the query, so an embedding model cannot retrieve it, whereas a
+graph walk finds it deterministically. A P\&ID is \emph{already} a graph; the
+system recovers that structure rather than flattening it into vectors.
+\end{keybox}
+
+\begin{keybox}{3. The domain ontology is configuration, not code}
+The knowledge-graph schema lives in \code{config/ontology.yaml}. A
+\code{general} pack covers any corpus; an \code{industrial} pack adds refinery
+types. Packs merge, and a new domain is a YAML block rather than a code change.
+This was validated by indexing a corpus of curricula vitae and a journal
+article, which produced 499 nodes across Person, Concept, Technology,
+Publication and Skill types.
+\end{keybox}

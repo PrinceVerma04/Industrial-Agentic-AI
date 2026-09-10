@@ -1,0 +1,131 @@
+\appendix
+\section{Appendices}
+
+\subsection{HTTP API}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+GET  & \code{/} & Single-page interface \\
+GET  & \code{/health} & Profile, graph statistics, tool count \\
+POST & \code{/ask} & Run an agentic goal end to end \\
+GET  & \code{/search?q=} & Retrieval with chosen mode and rationale \\
+GET  & \code{/models} & Catalogue, residency, routing decision log \\
+GET  & \code{/sovereignty} & Egress counters, sandbox capability, audit validity \\
+POST & \code{/sovereignty/canary} & Deliberate external call attempt \\
+GET  & \code{/audit} & Hash-chained audit tail with verification \\
+GET  & \code{/artifacts/\{name\}} & Download a generated deliverable \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Tool catalogue}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Tool} & \textbf{Function} \\
+\midrule
+\code{read\_file}, \code{write\_file}, \code{list\_files} & Workspace-jailed filesystem access \\
+\code{run\_python} & Execution in a network-isolated sandbox \\
+\code{calculate} & Symbolic evaluation returning the full derivation \\
+\code{kb\_search} & Retrieval with automatic mode selection \\
+\code{graph\_query} & Entity lookup and $n$-hop neighbourhood traversal \\
+\code{ocr\_document} & Exact text extraction from scans, CPU \\
+\code{describe\_document} & Vision-model comprehension of drawings and handwriting \\
+\code{make\_approval\_note} & Formal \code{.docx} with approval block and provenance \\
+\code{make\_deck} & \code{.pptx} generation \\
+\code{make\_sheet} & \code{.xlsx} generation \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Model manifest}
+
+\begin{lstlisting}[language=yamlx]
+profiles:
+  venue:                            # single 16 GB consumer card
+    vram_budget_gb: 13.5
+    models: [reason, code, vision, utility, embed]
+  datacenter:                       # 120B-class hardware
+    vram_budget_gb: 80
+    models: [reason_xl, code, vision, utility, embed]
+
+models:
+  - id: reason
+    tag: qwen3:14b
+    capabilities: [reason, plan, doc, summarize]
+    vram_gb: 11.0
+    ctx: 32768
+    priority: 10
+\end{lstlisting}
+
+\subsection{Verified environment}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}l l@{}}
+\toprule
+\textbf{Component} & \textbf{Version} \\
+\midrule
+Operating system & Ubuntu 26.04 LTS, kernel 7.0.0 \\
+Python & 3.11.15 (project-local virtualenv) \\
+PyTorch & 2.11.0+cu128, compute capability $(12,0)$ verified \\
+GPU & NVIDIA RTX 5080, 16\,GB, driver 595.84 \\
+CPU / RAM & 32 cores / 59\,GB \\
+Ollama & 0.33.3 \\
+Packages & 99, all within the virtualenv \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Glossary}
+
+\begin{description}[leftmargin=0pt,style=nextline,itemsep=3pt]
+\item[Agentic] A system that plans multiple steps, invokes tools, observes
+results and iterates, rather than producing a single response.
+\item[Air-gapped] Physically or logically disconnected from external networks.
+\item[BM25] A lexical ranking function scoring exact term overlap weighted by
+rarity.
+\item[Chunk] A contiguous passage of a document treated as one retrieval unit.
+\item[Constrained decoding] Restricting token sampling so output provably
+conforms to a schema.
+\item[Embedding] A dense numeric vector representing meaning, such that similar
+texts lie close together.
+\item[Graph RAG] Retrieval augmented by a knowledge graph, enabling traversal
+and aggregation queries that similarity search cannot express.
+\item[KV cache] Stored attention keys and values for generated tokens; the
+dominant per-session memory cost.
+\item[Leiden] A community detection algorithm partitioning a graph into densely
+connected clusters.
+\item[Namespace] A kernel facility isolating a process's view of a global
+resource such as the network stack.
+\item[Ontology] The set of permitted entity and relation types constraining
+graph extraction.
+\item[Open-weight] A model whose parameters are published and may be run
+locally.
+\item[Provenance] The record of which document, page and region a claim
+originated from.
+\item[Quantisation] Representing weights at reduced precision to lower memory
+use.
+\item[RRF] Reciprocal Rank Fusion; combining ranked lists by rank rather than
+by score.
+\item[Sovereignty] The property that data and computation never leave
+organisation-controlled infrastructure.
+\end{description}
+
+\subsection{Reproducing the results}
+
+\begin{lstlisting}
+git clone <repository> && cd sovereign-workbench
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+./scripts/01_pull_models.sh
+cp your-documents/* data/corpus/
+make check && make index && make serve
+\end{lstlisting}

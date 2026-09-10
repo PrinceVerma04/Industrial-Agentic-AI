@@ -1,0 +1,35 @@
+# ---- Tier 1: core service (no ML deps) ----
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+httpx>=0.27
+ollama>=0.4
+pyyaml>=6.0
+structlog>=24.4
+rich>=13.9
+typer>=0.15
+
+# ---- Tier 2: stores (embedded, no server needed) ----
+kuzu>=0.7                  # embedded graph DB  (replaces Neo4j: no Docker)
+qdrant-client>=1.12        # local on-disk mode (replaces Qdrant server)
+networkx>=3.4
+python-igraph>=0.11        # Leiden community detection
+leidenalg>=0.10
+
+# ---- Tier 3: deliverables & math ----
+python-docx>=1.1
+python-pptx>=1.0
+openpyxl>=3.1
+sympy>=1.13
+pypdfium2>=4.30            # PDF -> image rendering
+pillow>=11.0
+
+# ---- Tier 4: OCR / retrieval models ----
+rapidocr-onnxruntime>=1.4  # ONNX OCR: fast, CPU, no torch dependency
+onnxruntime>=1.20
+rank-bm25>=0.2             # sparse retrieval
+pytest>=8.0
+
+# ---- Tier 5: test/inspection UI ----
+streamlit>=1.40

@@ -1,0 +1,80 @@
+\section{The Problem Statement}
+
+\subsection{Official description}
+
+\begin{keybox}{SIH26117 --- Mangalore Refinery and Petrochemicals Limited}
+\emph{Background.} Refineries, PSUs, defence-linked manufacturing units and
+government offices generate a lot of routine but sensitive knowledge work:
+approval notes, board presentations, engineering calculations, code for
+internal tools, review of scanned drawings and inspection reports. None of this
+can go through cloud AI assistants because the underlying data is confidential:
+piping and instrumentation diagrams, financials, vendor negotiations,
+unreleased designs, internal correspondence, confidential business strategies.
+Company policy keeps this data on premises, so people either do the work
+manually --- losing productivity --- or they quietly paste confidential
+material into public tools anyway.
+\end{keybox}
+
+\subsection{Decomposition of the requirements}
+
+The statement contains five explicit demonstration requirements. Each is
+treated in this report as a verifiable acceptance criterion.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}c X l@{}}
+\toprule
+\textbf{\#} & \textbf{Requirement as stated} & \textbf{Section} \\
+\midrule
+1 & Model auto-selection across at least two different task types &
+    \S\ref{sec:router} \\
+2 & An agentic task carried end to end, e.g.\ reading a scanned inspection
+    report, extracting findings, drafting an approval note as a Word file &
+    \S\ref{sec:agent} \\
+3 & A coding task run and verified in a sandbox & \S\ref{sec:sandbox} \\
+4 & A multimodal task involving image or scanned document understanding &
+    \S\ref{sec:multimodal} \\
+5 & Evidence, through logs or a visible network monitor, that no external calls
+    are made at any point & \S\ref{sec:sovereignty} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Alongside these, the statement imposes four architectural constraints:
+
+\begin{enumerate}
+\item \textbf{Not locked to one model.} Multiple open-weight models must be
+      supported simultaneously, with automatic selection based on task needs.
+\item \textbf{Extensible without redesign.} New open-weight models must be
+      addable later, because the field moves quickly.
+\item \textbf{Genuinely agentic.} The system must plan multi-step work, call
+      local tools, and iterate --- not answer once and stop.
+\item \textbf{Real deliverables.} Output must be approval notes, office
+      documents, working code and calculations with steps shown --- not chat
+      replies.
+\end{enumerate}
+
+\subsection{Hardware constraint}
+
+The statement permits demonstration on ``a single workstation or server with a
+mid-range GPU'', explicitly allowing a smaller open-weight model if 120B-class
+hardware is unavailable at the venue. The reference implementation therefore
+targets a single 16\,GB consumer card, and treats the ability to run on modest
+hardware as a feature rather than a compromise: an organisation that must
+procure an H100 before it can pilot the system will not pilot the system.
+
+\subsection{Why this is hard}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Memory is the binding constraint.] A 16\,GB card cannot hold a reasoning
+model, a coding model and a vision model concurrently. Naive multi-model
+serving thrashes or crashes.
+\item[Proving a negative.] Demonstrating that \emph{no} external call occurred
+is qualitatively harder than demonstrating a feature works. It requires
+enforcement at a layer the application cannot bypass.
+\item[Retrieval over structure.] Industrial questions are frequently about
+dependency and impact. These are graph problems wearing the clothing of search
+problems, and conventional retrieval-augmented generation answers them badly.
+\item[Trust in output.] A system that fabricates a plausible approval note is
+worse than no system. Every claim must carry provenance back to a source page.
+\end{description}

@@ -1,0 +1,83 @@
+\section{Solution Overview}
+
+\subsection{Design principles}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Enforce, do not request.] Isolation is implemented where the application
+cannot override it: kernel network namespaces and firewall rules, not
+configuration flags.
+\item[Configuration over code.] The model catalogue and the domain ontology are
+YAML documents. Adding a model or a domain changes no Python.
+\item[Embedded over networked.] The graph database and vector store run
+in-process. On an air-gapped deployment there is no listening port for anything
+to reach, and no service to orchestrate.
+\item[Degrade, never fail.] If the embedding model is absent, graph traversal
+still answers structural questions. If a tool errors, the failure is reported
+to the agent rather than injected into a deliverable.
+\item[Provenance everywhere.] Chunks, graph nodes and graph edges all carry
+document, page and region identifiers, so any statement can be traced back.
+\end{description}
+
+\subsection{Capability map}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+\textbf{Capability} & \textbf{Mechanism} & \textbf{Module} \\
+\midrule
+Multi-model serving & Declarative manifest, capability tags, priorities &
+  \code{config/models.yaml} \\
+Task routing & Two-stage: heuristics first, 4B classifier fallback &
+  \code{app/router/classifier.py} \\
+Memory management & Budgeted LRU residency with eviction &
+  \code{app/router/manager.py} \\
+Agentic execution & Plan $\rightarrow$ Execute $\rightarrow$ Critique loop &
+  \code{app/agent/loop.py} \\
+Tool layer & 12 schema-declared tools with argument coercion &
+  \code{app/tools/} \\
+Sandboxing & Unprivileged user + network namespace &
+  \code{app/tools/sandbox.py} \\
+Document understanding & ONNX OCR on CPU, vision model on GPU &
+  \code{app/tools/vision.py} \\
+Knowledge graph & Typed extraction, canonicalisation, embedded store &
+  \code{app/graphrag/} \\
+Hybrid retrieval & Dense + BM25 fused by reciprocal rank &
+  \code{app/retrieval/vector.py} \\
+Deliverables & Template-filled Office documents &
+  \code{app/tools/docgen.py} \\
+Sovereignty & Egress monitor, canary, hash-chained audit &
+  \code{app/sentinel/} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{A worked example}
+
+The following illustrates the full path through the system.
+
+\begin{enumerate}
+\item An engineer uploads a scanned inspection report and asks: \emph{``Which
+      units are affected if P-101A is isolated, and draft an approval note
+      recommending seal replacement.''}
+\item The \term{router} classifies the request. The presence of a document
+      attachment and deliverable vocabulary routes planning to the 14B
+      reasoning model.
+\item The \term{agent} produces a plan: query the graph for P-101A's
+      neighbourhood; compute the impact; generate an approval note.
+\item \term{graph\_query} traverses three hops from \code{Equipment:P-101A} and
+      returns E-204 (one hop, direct feed), V-1201 (two hops, indirect) and
+      TI-2043 (the instrument monitoring E-204).
+\item The result is \term{rendered} into readable prose and substituted into
+      the document-generation step through a \code{\{\{step1\}\}} placeholder.
+\item \term{make\_approval\_note} writes a real \code{.docx} with headings, an
+      approval signature table and a provenance footer.
+\item Throughout, the \term{sentinel} panel shows
+      \code{external\_connections: 0}, and the audit chain records every prompt,
+      model choice and tool call.
+\end{enumerate}
+
+The critical detail is step 4. V-1201 is never mentioned in the same sentence
+as P-101A anywhere in the corpus. It is reachable only by following
+\code{P-101A --FEEDS--> E-204 --FEEDS--> V-1201}. No embedding model retrieves
+it; a graph walk finds it every time.

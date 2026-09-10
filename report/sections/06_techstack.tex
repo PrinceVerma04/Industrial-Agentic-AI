@@ -1,0 +1,189 @@
+\section{Technology Stack}
+
+Each component below is given with a definition, a concrete example of its role
+in this system, and the reason it was selected over alternatives.
+
+\subsection{Model serving and inference}
+
+\subsubsection{Ollama}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A local inference server that runs open-weight language
+models from quantised GGUF files and exposes an HTTP API. It loads models on
+demand and unloads them after an idle interval.
+\item[Example.] \code{POST /api/chat} with \code{\{"model": "qwen3:14b",
+"format": <json-schema>\}} returns output guaranteed to satisfy the schema.
+\item[Why chosen.] Automatic load and unload gives VRAM management essentially
+for free, which is decisive on a 16\,GB card. It ships CUDA~12.8 builds that
+work on Blackwell today, and air-gapping is simply copying \code{\textasciitilde/.ollama}.
+vLLM offers higher throughput but no automatic model swapping, which matters
+more here than tokens per second.
+\end{description}
+
+\subsubsection{Open-weight models}
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l l r X@{}}
+\toprule
+\textbf{Role} & \textbf{Model} & \textbf{VRAM} & \textbf{Why this one} \\
+\midrule
+Reasoning, planning & \code{qwen3:14b} & 11.0\,GB & strongest planner that fits with headroom \\
+Routing, extraction & \code{qwen3:4b} & 4.0\,GB & thousands of calls; must be cheap \\
+Coding & \code{qwen2.5-coder:7b} & 6.0\,GB & specialised for code generation \\
+Vision & \code{qwen2.5vl:7b} & 8.0\,GB & reads scans, handwriting, drawings \\
+Embeddings & \code{bge-m3} & 1.2\,GB & dense \emph{and} sparse in one pass \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent Quantisation is 4-bit throughout. A \code{datacenter} profile
+substitutes \code{gpt-oss:20b} where more memory is available, addressing the
+problem statement's reference to 120B-class hardware.
+
+\subsection{Retrieval and storage}
+
+\subsubsection{K\`uzu --- embedded property graph database}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] An in-process graph database with a Cypher-like query
+language, analogous to what SQLite is for relational data.
+\item[Example.] \code{MATCH (a:Equipment \{key:\$k\})-[r*1..3]-(b) RETURN b}
+returns everything within three hops of an asset.
+\item[Why chosen.] No server process and no listening port. On an air-gapped
+box this is a security property, not merely a convenience.
+\end{description}
+
+\subsubsection{Qdrant (local mode) --- vector store}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A similarity search engine over embedding vectors; local
+mode runs as an on-disk library rather than a service.
+\item[Example.] A 1024-dimensional \code{bge-m3} embedding is stored per chunk
+with its \code{doc\_id} and page; cosine search returns nearest passages.
+\item[Why chosen.] Native support for combined dense and sparse vectors, and
+the ability to run embedded.
+\end{description}
+
+\subsubsection{BM25 --- lexical ranking}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A term-frequency ranking function that scores documents by
+exact word overlap, weighted by rarity.
+\item[Example.] The query \code{P-101A} matches the literal token; an embedding
+model may instead return semantically similar but wrong assets such as P-101B.
+\item[Why chosen.] Exact identifier matching is a hard requirement in
+industrial corpora, and it is precisely where dense retrieval is weakest.
+\end{description}
+
+\subsubsection{Reciprocal Rank Fusion}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A method of combining ranked lists using
+$\mathrm{score}(d) = \sum_{i} 1/(k + \mathrm{rank}_i(d))$, where $k$ is a
+smoothing constant, conventionally 60.
+\item[Example.] A passage ranked 1st by BM25 and 5th by vector search scores
+$1/61 + 1/65 = 0.0318$.
+\item[Why chosen.] It is scale-free. Cosine similarities and BM25 scores live
+on incomparable scales, and fusing by rank avoids ever calibrating them.
+\end{description}
+
+\subsubsection{Leiden community detection}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A graph clustering algorithm that partitions a network into
+densely connected communities, improving on Louvain by guaranteeing
+well-connected clusters.
+\item[Example.] Applied to the indexed corpus it produced 37 communities, each
+summarised once so that ``what are the recurring themes'' can be answered.
+\item[Why chosen.] Thematic questions have no single source passage. Only
+pre-computed cluster summaries can answer them.
+\end{description}
+
+\subsection{Document understanding}
+
+\subsubsection{RapidOCR (ONNX Runtime)}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] An optical character recognition pipeline --- text
+detection, angle classification, recognition --- executed through ONNX Runtime
+on the CPU.
+\item[Example.] A skewed, noisy scan of an inspection report was processed in
+2.4 seconds, recovering every asset tag correctly.
+\item[Why chosen.] It requires no GPU and no PyTorch, so it leaves the entire
+card for the language model, and it installs cleanly offline.
+\end{description}
+
+\subsubsection{Vision-language model}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A model accepting interleaved image and text input, able to
+reason about layout, symbols and handwriting rather than only transcribe.
+\item[Example.] Asked to list visible tags and the vibration reading in a
+scanned report, it returned P-101A, TI-2043, E-204 and
+``7.2\,mm/s RMS (alarm 4.5, trip 9.0)''.
+\item[Why chosen.] OCR transcribes; it does not comprehend. A P\&ID requires
+understanding of symbols and connectivity, not character recognition.
+\end{description}
+
+\subsection{Agent and tooling}
+
+\subsubsection{Constrained decoding}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] Restricting token generation so output provably conforms to
+a supplied JSON schema.
+\item[Example.] Entity extraction cannot emit a type outside the ontology
+enumeration, because such tokens are masked during sampling.
+\item[Why chosen.] It removes an entire class of parsing failure. Prompting a
+model to ``reply in JSON'' and then parsing prose is unreliable at scale.
+\end{description}
+
+\subsubsection{Linux namespaces}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A kernel feature partitioning global resources so processes
+see isolated views. A network namespace provides a private stack with only a
+down loopback interface.
+\item[Example.] \code{unshare -rn python main.py} runs generated code where
+\code{socket.create\_connection(("1.1.1.1", 53))} raises
+\code{OSError: Network is unreachable}.
+\item[Why chosen.] It requires no root, and the guarantee is enforced by the
+kernel rather than by application policy.
+\end{description}
+
+\subsubsection{SymPy}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] A symbolic mathematics library performing exact algebraic
+manipulation rather than floating-point approximation.
+\item[Example.] Net positive suction head, evaluated symbolically then
+substituted, returns $11.810537$ with every intermediate step recorded.
+\item[Why chosen.] The problem statement requires ``calculations with steps
+shown''. Language models perform arithmetic unreliably and produce no auditable
+derivation; symbolic evaluation produces both.
+\end{description}
+
+\subsubsection{python-docx, python-pptx, openpyxl}
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Definition.] Libraries constructing genuine Office Open XML documents.
+\item[Example.] An approval note is emitted with a title, numbered findings, a
+three-column signature table and a provenance footer.
+\item[Why chosen.] Filling templates from structured fields is far more
+reliable than asking a model to emit document XML, and the result resembles the
+organisation's own paperwork.
+\end{description}
+
+\subsection{Application and platform}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Component} & \textbf{Role and rationale} \\
+\midrule
+FastAPI + Uvicorn & Async HTTP API bound to \code{127.0.0.1}; no external interface \\
+Pydantic & Typed settings and schema validation at every boundary \\
+httpx & Single auditable HTTP transport, pinned to loopback by assertion \\
+NetworkX + python-igraph & Graph construction and Leiden clustering \\
+PyTorch (cu128) & CUDA runtime for Blackwell \code{sm\_120}; used by ONNX paths \\
+nftables & Kernel firewall implementing default-deny egress \\
+SQLite & Extraction cache and community summaries; zero configuration \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{keybox}{Verified platform}
+Python 3.11.15 in a project-local virtualenv; PyTorch 2.11.0+cu128 confirmed on
+compute capability $(12,0)$; NVIDIA RTX~5080 16\,GB; 32 CPU cores; 59\,GB system
+RAM. Ninety-nine packages, all installed inside the virtualenv; nothing was
+installed system-wide.
+\end{keybox}

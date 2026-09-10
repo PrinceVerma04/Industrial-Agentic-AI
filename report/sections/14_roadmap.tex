@@ -1,0 +1,52 @@
+\section{Roadmap}
+
+\subsection{Immediate --- correctness and speed}
+
+\begin{enumerate}
+\item Disable reasoning mode and impose a generation ceiling on extraction and
+      classification tasks. Expected to reduce indexing time by more than an
+      order of magnitude.
+\item Index standalone image files so that drawings placed in the corpus are
+      not silently skipped.
+\item Ingest \code{.docx} and \code{.xlsx} sources, which are ubiquitous in the
+      target environment.
+\item Improve the synthesis prompt so that generated prose reads naturally
+      around substituted tool output.
+\end{enumerate}
+
+\subsection{Near term --- demonstration quality}
+
+\begin{enumerate}
+\item Graph visualisation in the interface, rendering the retrieved subgraph
+      and animating traversal. This is the highest-value remaining item for a
+      live demonstration.
+\item A side-by-side comparison view showing vector-only retrieval failing the
+      same dependency question that graph traversal answers.
+\item A cross-encoder reranking stage after fusion.
+\item Exercise the coding model with a goal that requires sandboxed execution,
+      completing the routing demonstration across three distinct models.
+\end{enumerate}
+
+\subsection{Medium term --- capability}
+
+\begin{enumerate}
+\item A trained P\&ID symbol detector, replacing sole reliance on the vision
+      model for drawing comprehension.
+\item Temporal reasoning over document revisions, so that superseded procedures
+      are excluded from retrieval by default.
+\item Confidence scoring on extracted relations, with a human review queue for
+      low-confidence assertions.
+\item Multi-document synthesis with conflict detection, flagging where two
+      sources disagree rather than silently preferring one.
+\end{enumerate}
+
+\subsection{Long term --- production}
+
+\begin{enumerate}
+\item Replace embedded stores with clustered equivalents; separate the
+      ingestion and serving planes.
+\item Authentication, authorisation, and graph partitioning by clearance level.
+\item Migrate the sandbox to gVisor or Kata Containers under an orchestrator.
+\item Formal validation of the sovereignty guarantee, suitable for audit by an
+      organisation's own information security function.
+\end{enumerate}

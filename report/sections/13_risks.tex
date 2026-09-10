@@ -1,0 +1,60 @@
+\section{Limitations and Risks}
+
+\subsection{Known limitations}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l X l@{}}
+\toprule
+\textbf{Area} & \textbf{Limitation} & \textbf{Severity} \\
+\midrule
+Ingestion rate & reduced 250\,s $\rightarrow$ 18.1\,s per chunk; still the
+  slowest stage at bulk scale & medium \\
+Concurrency & Embedded graph store permits one writer & high at scale \\
+Image indexing & Standalone images are not auto-indexed, only read on demand &
+  medium \\
+Office formats & \code{.docx} and \code{.xlsx} sources are not ingested &
+  medium \\
+P\&ID symbols & No trained symbol detector; the vision model is the only path &
+  medium \\
+Prompt injection & An ingested document could steer the planner & medium \\
+Extraction recall & Bounded by a 4B model's competence on dense text & medium \\
+Graph visualisation & Not implemented in the interface & low \\
+Reranking & Fusion is by rank only; no cross-encoder stage & low \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Risk register}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}X l l X@{}}
+\toprule
+\textbf{Risk} & \textbf{Likelihood} & \textbf{Impact} & \textbf{Mitigation} \\
+\midrule
+Extraction quality degrades on unfamiliar domains & medium & high &
+  ontology packs are user-editable; extraction is cached and re-runnable \\
+Bulk ingestion exceeds the available window & high & high &
+  tiered extraction; parallel workers; vector-only fallback \\
+Silent output errors reach a signed document & low & \textbf{severe} &
+  failed steps cannot be substituted; provenance on every claim; human approval
+  block retained in every generated note \\
+Venue hardware differs from development & medium & medium &
+  profile switch in \code{models.yaml}; preflight script \\
+A dependency attempts network access & medium & high &
+  host egress denial; offline environment flags \\
+Model licensing constraints & low & medium &
+  all models are open-weight; the manifest permits substitution \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{An honest statement of maturity}
+
+This is a working reference implementation validated end to end on a single
+workstation, not a production system. Every one of the five demonstration
+requirements has been executed and observed rather than merely designed. The
+components most likely to require replacement before production use are, in
+order: the embedded graph store, the extraction throughput path, and the
+absence of any authentication or authorisation layer.

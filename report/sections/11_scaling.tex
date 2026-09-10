@@ -1,0 +1,155 @@
+\section{Enterprise Scaling and Sizing}
+
+This section addresses the question of what deploying the system at
+organisational scale actually requires. Figures marked \emph{measured} derive
+from the reference implementation; those marked \emph{projected} are
+extrapolations and are stated as such.
+
+\subsection{The sizing model}
+
+Three quantities determine every hardware decision.
+
+\begin{align*}
+\text{chunks} &= \text{pages} \times 3.3 && \text{\small(measured)}\\
+\text{index bytes} &= \text{chunks} \times 12\,\text{KB}
+   && \text{\small(5.4\,KB vectors + 6.2\,KB graph)}\\
+\text{ingest GPU-hours} &= \frac{\text{chunks} \times t_{\text{chunk}}}{3600}
+   && \text{\small($t_{\text{chunk}} \approx 15$\,s optimised, projected)}
+\end{align*}
+
+\noindent Per-chunk storage decomposes as: a 1024-dimensional
+\code{float32} embedding (4\,096\,B), the chunk payload and metadata
+($\approx$1\,300\,B), approximately 8.5 graph nodes and 6.6 edges
+($\approx$6.2\,KB). Source documents are additional and typically dominate raw
+storage while being irrelevant to query performance.
+
+\subsection{Worked storage examples}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l r r r r@{}}
+\toprule
+\textbf{Corpus} & \textbf{Pages} & \textbf{Chunks} & \textbf{Index} & \textbf{Ingest (1 GPU)} \\
+\midrule
+Departmental archive & 50\,000 & 165\,K & 2.0\,GB & $\approx$29 days \\
+Plant document set & 500\,000 & 1.65\,M & 20\,GB & $\approx$10 months \\
+Refinery, all history & 5\,000\,000 & 16.5\,M & 198\,GB & impractical \\
+Enterprise, multi-site & 20\,000\,000 & 66\,M & 792\,GB & impractical \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keybox}{Storage is cheap; ingestion is the real constraint}
+Index storage is modest even at twenty million pages --- under a terabyte, well
+within a single NVMe array. The binding constraint is \emph{GPU-hours for
+extraction}. Bulk ingestion at plant scale is a parallel batch problem
+requiring a dedicated ingestion cluster, not a bigger disk.
+\end{keybox}
+
+\subsection{Mitigating the ingestion cost}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Parallelism.] Extraction is embarrassingly parallel across chunks.
+$N$ GPUs deliver close to $N\times$ throughput; 16 GPUs reduce the 500\,000-page
+case from ten months to roughly nineteen days.
+\item[Continuous batching.] Replacing Ollama with vLLM for the extraction
+worker enables batched decoding, empirically worth a further 4--8$\times$ on
+short structured outputs.
+\item[Tiered extraction.] Not every document justifies graph extraction.
+Indexing everything for vector search while restricting graph extraction to
+governing documents --- procedures, drawings, incident reports --- typically
+reduces the graph workload by an order of magnitude.
+\item[Incremental ingestion.] After the initial load, only new and revised
+documents are processed. Steady-state volume is a small fraction of the bulk
+load.
+\end{description}
+
+\subsection{Deployment tiers}
+
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}l l l l r X@{}}
+\toprule
+\textbf{Tier} & \textbf{GPU} & \textbf{RAM} & \textbf{Storage} & \textbf{Users} & \textbf{Corpus} \\
+\midrule
+Pilot & 1 $\times$ 16--24\,GB & 64\,GB & 2\,TB NVMe & 5--15 & $\le$50\,K pages \\
+Departmental & 1 $\times$ 48\,GB & 128\,GB & 8\,TB NVMe & 25--75 & $\le$500\,K pages \\
+Plant-wide & 2--4 $\times$ 80\,GB & 256--512\,GB & 30\,TB NVMe & 100--300 & $\le$5\,M pages \\
+Enterprise & 8--16 $\times$ 80\,GB & 1\,TB+ & 100\,TB+ & 1\,000+ & 20\,M+ pages \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Tier} & \textbf{Characteristics} \\
+\midrule
+\textbf{Pilot} & Exactly the reference implementation. One model resident at a
+time with eviction. Single workstation under a desk; no data-centre
+dependency. Proves value before procurement. \\
+\addlinespace
+\textbf{Departmental} & A single 48\,GB card holds the reasoning and vision
+models concurrently, removing swap latency. Supports the full \code{venue}
+profile without eviction. \\
+\addlinespace
+\textbf{Plant-wide} & 80\,GB cards enable 120B-class open-weight models,
+matching the problem statement's \code{datacenter} profile. One GPU is
+dedicated to batch ingestion; the remainder serve interactive load. Graph and
+vector stores migrate from embedded to clustered. \\
+\addlinespace
+\textbf{Enterprise} & Separate ingestion and serving clusters, high
+availability, per-site corpora with federated retrieval, role-based access
+control over graph partitions. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Concurrency}
+
+Interactive capacity is governed by key-value cache memory, not by model
+weights:
+
+\[
+\text{concurrent sessions} \approx
+\frac{V_{\text{GPU}} - V_{\text{weights}}}{V_{\text{KV per session}}}
+\]
+
+\noindent For a 14B model at 4-bit ($\approx$9\,GB) on an 80\,GB card with
+roughly 1\,GB of KV cache per 8\,K-token session, the arithmetic gives about 70
+sessions; 40--50 is a realistic planning figure once fragmentation and headroom
+are accounted for. Because agent runs are bursty rather than sustained, a
+served-user multiple of five to ten times the concurrent-session count is
+typical.
+
+\subsection{Architectural changes required above the pilot tier}
+
+The reference implementation makes deliberate choices that are correct for a
+single workstation and must change at scale.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Component} & \textbf{Pilot} & \textbf{Scale-out replacement} \\
+\midrule
+Graph store & K\`uzu (embedded) & Neo4j cluster or K\`uzu with a read-replica fan-out \\
+Vector store & Qdrant local & Qdrant or Milvus cluster with sharding \\
+Inference & Ollama & vLLM with continuous batching and tensor parallelism \\
+Cache & SQLite & PostgreSQL or Redis \\
+Sandbox & \code{unshare} & gVisor or Kata Containers under an orchestrator \\
+Identity & none & OIDC with role-based graph partition access \\
+Ingestion & in-process & a queue with distributed workers \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{keybox}{A caution on the single-writer constraint}
+K\`uzu permits one writing process. In the reference implementation this means
+indexing and serving cannot run concurrently --- an acceptable limitation for a
+pilot and an unacceptable one for production. It is the first component that
+must be replaced when moving beyond a single workstation.
+\end{keybox}

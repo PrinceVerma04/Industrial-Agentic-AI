@@ -1,0 +1,98 @@
+%=============================================================================
+%  Sovereign On-Premise Agentic AI Workbench -- Project Report
+%  Smart India Hackathon 2026 | Problem Statement SIH26117 | MRPL
+%=============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=2.3cm,top=2.6cm,bottom=2.6cm]{geometry}
+\usepackage{graphicx,xcolor}
+\usepackage{booktabs,longtable,array,tabularx,multirow,colortbl}
+\usepackage{listings,fancyvrb}
+\usepackage{enumitem,titlesec,fancyhdr,caption}
+\usepackage{amsmath,amssymb,textcomp,microtype}
+\usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+\usepackage[hidelinks,pdfusetitle]{hyperref}
+
+%--------------------------------------------------------------- palette ----
+\definecolor{ink}{HTML}{111418}
+\definecolor{accent}{HTML}{1F5F8B}
+\definecolor{accent2}{HTML}{0E7C61}
+\definecolor{warn}{HTML}{9A3412}
+\definecolor{rule}{HTML}{D6DCE2}
+\definecolor{soft}{HTML}{F4F7F9}
+\definecolor{code}{HTML}{F6F8FA}
+
+\hypersetup{colorlinks=true,linkcolor=accent,urlcolor=accent,citecolor=accent}
+
+%--------------------------------------------------------------- headings ---
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{ink}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{ink}}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.6em}{0.7em}
+
+\pagestyle{fancy}\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{accent}Sovereign On-Premise Agentic AI Workbench}
+\fancyhead[R]{\small\color{ink}SIH26117}
+\fancyfoot[C]{\small\thepage}
+
+\captionsetup{font=small,labelfont={bf,color=accent}}
+\setlist[itemize]{leftmargin=1.3em,itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{leftmargin=1.5em,itemsep=2pt,topsep=3pt}
+
+%--------------------------------------------------------------- listings ---
+\lstdefinestyle{sh}{
+  basicstyle=\ttfamily\footnotesize,backgroundcolor=\color{code},
+  frame=single,rulecolor=\color{rule},framesep=5pt,
+  breaklines=true,columns=fullflexible,
+  keywordstyle=\color{accent}\bfseries,commentstyle=\color{accent2}\itshape,
+  stringstyle=\color{warn},showstringspaces=false,
+  numberstyle=\tiny\color{gray},xleftmargin=4pt,aboveskip=8pt,belowskip=8pt}
+\lstset{style=sh}
+\lstdefinelanguage{yamlx}{keywords={packs,nodes,relations,models,profiles,tagged,
+  capabilities,vram_gb,backend,tag,id,ctx,priority},sensitive=true,
+  comment=[l]{\#},morestring=[b]"}
+
+%--------------------------------------------------------------- macros -----
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\tick}{{\color{accent2}\textbf{\checkmark}}}
+\newcommand{\cross}{{\color{warn}\textbf{\texttimes}}}
+\newcommand{\term}[1]{\textbf{\color{accent}#1}}
+
+\newsavebox{\kbox}
+\newenvironment{keybox}[1]
+  {\par\medskip\noindent
+   \begin{lrbox}{\kbox}%
+   \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2pt}%
+   \textbf{\color{accent}#1}\par\vspace{3pt}}
+  {\end{minipage}\end{lrbox}%
+   \noindent\colorbox{soft}{\usebox{\kbox}}\par\medskip}
+
+\begin{document}
+\input{sections/00_title}
+\clearpage
+{\hypersetup{linkcolor=ink}\tableofcontents}
+\clearpage
+
+\input{sections/01_summary}
+\input{sections/02_problem}
+\input{sections/03_solution}
+\input{sections/04_architecture}
+\input{sections/05_pipeline}
+\input{sections/06_techstack}
+\input{sections/07_graphrag}
+\input{sections/08_sovereignty}
+\input{sections/09_implementation}
+\input{sections/10_performance}
+\input{sections/11_scaling}
+\input{sections/12_deployment}
+\input{sections/13_risks}
+\input{sections/14_roadmap}
+\input{sections/15_appendix}
+
+\end{document}

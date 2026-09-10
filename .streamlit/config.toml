@@ -1,0 +1,17 @@
+# Loopback only. This project's premise is that nothing leaves the machine.
+# Streamlit's default binds 0.0.0.0 and advertises a LAN and public URL, which
+# would expose the corpus console to the network. Do not relax these.
+[server]
+address = "127.0.0.1"
+port = 8501
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+serverAddress = "127.0.0.1"
+
+[theme]
+base = "light"
+primaryColor = "#1F5F8B"

@@ -1,0 +1,122 @@
+\section{Sovereignty and Security}
+\label{sec:sovereignty}
+
+The problem statement is unusually direct about this requirement:
+
+\begin{quote}\itshape
+The system should also show, through logs or a visible network monitor, that no
+external calls are made at any point. That's the actual proof of the sovereign
+claim, not just a statement of it.
+\end{quote}
+
+Accordingly, sovereignty is implemented in four independent layers, so that no
+single failure silently removes the guarantee.
+
+\subsection{Layer 1 --- kernel network isolation}
+
+Generated code executes inside an unprivileged user and network namespace
+created with \code{unshare -rn}. The child process receives a private network
+stack containing only a down loopback interface. Supplementary controls: RLIMIT
+caps on CPU, address space, process count and file size; a scrubbed environment
+with credential-shaped variables removed; a scratch working directory; and a
+wall-clock timeout.
+
+\begin{lstlisting}
+>>> run_python("import socket; socket.create_connection(('1.1.1.1', 53))")
+backend = unshare-netns
+stdout  = blocked: OSError [Errno 101] Network is unreachable
+\end{lstlisting}
+
+\noindent This is a kernel guarantee. The code is not prevented from calling
+out by policy or by a library wrapper; there is no route for the packet to
+take. Where Docker is available the sandbox upgrades automatically to
+\code{-{}-network none} with a read-only root filesystem.
+
+\subsection{Layer 2 --- host egress denial}
+
+At the venue, \code{scripts/04\_lockdown.sh} installs an nftables table with a
+default \code{drop} policy on the output hook, permitting only loopback and
+established connections. Ollama, bound to \code{127.0.0.1}, continues to
+function; everything else stops.
+
+\begin{lstlisting}
+table inet sovereign {
+  chain output {
+    type filter hook output priority 0; policy drop;
+    oif "lo" accept
+    ip daddr 127.0.0.0/8 accept
+    ct state established,related accept
+    counter comment "dropped-egress"
+  }
+}
+\end{lstlisting}
+
+\subsection{Layer 3 --- live monitoring and the canary}
+
+A background sentinel samples connection state and classifies every peer as
+local or external, exposing counters through \code{GET /sovereignty} and a
+persistent panel in the interface. A deliberate breach attempt is available at
+\code{POST /sovereignty/canary}.
+
+\begin{lstlisting}
+{"blocked": true, "verdict": "BLOCKED",
+ "detail": "TimeoutError: timed out", "ms": 3003}
+\end{lstlisting}
+
+\noindent The canary is the most valuable twenty seconds of any demonstration:
+it converts an assertion into an observation the audience can watch happen. The
+monitor reports honestly in both directions --- on a development machine with
+ordinary internet access it correctly reports that the call succeeded.
+
+\subsection{Layer 4 --- tamper-evident audit}
+
+Every prompt, model selection, tool invocation and file write is appended to a
+hash chain. Each record embeds the SHA-256 digest of its predecessor, so any
+modification or deletion breaks verification and the first corrupted index is
+reported.
+
+\begin{lstlisting}
+record_n = { ts, event, payload, prev: hash(record_{n-1}) }
+hash_n   = sha256(canonical_json(record_n))
+\end{lstlisting}
+
+\noindent A regression test alters one field in the middle of a chain and
+asserts that verification fails at exactly that index. This makes the audit
+log suitable as compliance evidence rather than merely as a debugging aid.
+
+\subsection{Additional controls}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Control} & \textbf{Implementation} \\
+\midrule
+Loopback assertion & The LLM client refuses to construct against a non-local host \\
+No listening ports & Graph and vector stores are embedded libraries \\
+Filesystem jail & All file tools resolve paths and reject workspace escape \\
+Offline model cache & \code{HF\_HUB\_OFFLINE}, \code{TRANSFORMERS\_OFFLINE} set \\
+Typed tool arguments & Coerced and validated before invocation \\
+No error leakage & Failed steps cannot be substituted into deliverables \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Threat model}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}X l X@{}}
+\toprule
+\textbf{Threat} & \textbf{Status} & \textbf{Mitigation} \\
+\midrule
+Model exfiltrates data over the network & Mitigated & no route exists from the host \\
+Generated code opens a socket & Mitigated & network namespace \\
+Generated code reads outside the workspace & Mitigated & path jail; sandbox scratch dir \\
+A dependency phones home on import & Mitigated & host egress denial; offline flags \\
+Audit log altered after the fact & Detected & hash chain verification \\
+Prompt injection from an ingested document & \textbf{Partial} & tools are typed and enumerated, but a malicious document could still steer the planner \\
+Malicious insider with shell access & \textbf{Out of scope} & requires OS-level controls \\
+\bottomrule
+\end{tabularx}
+\end{center}

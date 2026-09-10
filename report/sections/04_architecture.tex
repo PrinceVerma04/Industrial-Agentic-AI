@@ -1,0 +1,101 @@
+\section{System Architecture}
+
+\subsection{Layered view}
+
+\begin{figure}[h]\centering
+\begin{tikzpicture}[
+  font=\footnotesize,
+  layer/.style={draw=rule,fill=soft,rounded corners=2pt,minimum height=9mm,
+                text width=15.2cm,align=center},
+  hl/.style={draw=accent,fill=accent!8,rounded corners=2pt,minimum height=9mm,
+             text width=15.2cm,align=center},
+  sec/.style={draw=accent2,fill=accent2!8,rounded corners=2pt,
+              minimum height=9mm,text width=15.2cm,align=center},
+  node distance=2.6mm]
+\node[hl] (ui) {\textbf{Presentation}\;\;chat $\cdot$ artefacts pane $\cdot$ graph view $\cdot$ \textbf{sovereignty panel}};
+\node[layer,below=of ui] (orch) {\textbf{Orchestrator} (FastAPI, loopback only)\;\;planner $\rightarrow$ executor $\rightarrow$ critic};
+\node[layer,below=of orch] (mid) {\textbf{Router} \code{models.yaml} + classifier \;\;$|$\;\; \textbf{Tools} 12 declared \;\;$|$\;\; \textbf{Retrieval} 4 modes};
+\node[layer,below=of mid] (inf) {\textbf{Inference gateway} --- Ollama, OpenAI-compatible, bound to \code{127.0.0.1}};
+\node[layer,below=of inf] (ing) {\textbf{Ingestion} rasterise $\rightarrow$ OCR $\rightarrow$ semantic chunk $\rightarrow$ typed extraction $\rightarrow$ index};
+\node[layer,below=of ing] (sto) {\textbf{Stores} K\`uzu graph $\cdot$ Qdrant vectors $\cdot$ SQLite cache \& communities --- all \emph{embedded}};
+\node[sec,below=of sto] (enf) {\textbf{Enforcement} network namespaces $\cdot$ nftables egress DROP $\cdot$ hash-chained audit};
+\end{tikzpicture}
+\caption{Seven layers. Each runs as a separate process or in-process library;
+none opens a port reachable from outside the host.}
+\end{figure}
+
+\subsection{Why embedded stores}
+
+The original design used Neo4j and Qdrant as containers. Docker proved
+unavailable on the target machine without administrative rights, which forced a
+re-evaluation that produced a better result.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\toprule
+\textbf{Need} & \textbf{Conventional} & \textbf{Chosen} & \textbf{Consequence} \\
+\midrule
+Graph database & Neo4j container & K\`uzu (embedded) & no server, no port, no orchestration \\
+Vector store & Qdrant server & Qdrant local mode & on-disk, in-process \\
+Metadata & PostgreSQL & SQLite & zero configuration \\
+Sandbox & Docker \code{-{}-network none} & \code{unshare -rn} & unprivileged, kernel-enforced \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+For an air-gapped deployment this is strictly superior. A system with no
+listening sockets has no network attack surface to defend, and installation
+reduces to copying a directory.
+
+\subsection{Request lifecycle}
+
+\begin{figure}[h]\centering
+\begin{tikzpicture}[font=\scriptsize,node distance=6mm and 7mm,
+  b/.style={draw=rule,fill=white,rounded corners=2pt,minimum height=7.5mm,
+            text width=2.1cm,align=center},
+  ac/.style={draw=accent,fill=accent!8,rounded corners=2pt,minimum height=7.5mm,
+             text width=2.1cm,align=center},
+  ar/.style={-{Stealth[length=2mm]},draw=accent}]
+\node[ac] (q) {user goal};
+\node[b,right=of q] (r) {route\\(task type)};
+\node[b,right=of r] (m) {select model\\(evict if needed)};
+\node[b,right=of m] (p) {plan\\(typed steps)};
+\node[b,below=9mm of p] (e) {execute tools};
+\node[b,left=of e] (rt) {retrieve\\(4 modes)};
+\node[b,left=of rt] (c) {critique};
+\node[ac,left=of c] (a) {answer\\+ artefacts};
+\draw[ar](q)--(r); \draw[ar](r)--(m); \draw[ar](m)--(p); \draw[ar](p)--(e);
+\draw[ar](e)--(rt); \draw[ar](rt)--(c); \draw[ar](c)--(a);
+\draw[ar,dashed] (c.north) -- ++(0,5mm) -| node[pos=0.25,above,font=\tiny]{goal not met: replan} (p.north);
+\end{tikzpicture}
+\caption{Every stage writes to the audit log. The critic may trigger up to
+\emph{n} replanning iterations before synthesis.}
+\end{figure}
+
+\subsection{Repository layout}
+
+\begin{lstlisting}
+sovereign-workbench/
+  config/
+    models.yaml           model catalogue: capabilities, VRAM, priority
+    ontology.yaml         domain packs: node types, relations, tagging
+  app/
+    core/      config, Ollama client, hash-chained audit log
+    router/    task classifier + VRAM-aware model manager
+    agent/     plan-execute-critique loop, step data flow
+    tools/     fs, sandbox, calc, docgen, vision, registry, render
+    ingest/    PDF/OCR/semantic chunking with provenance
+    graphrag/  ontology, extraction, canonicalisation, store, communities
+    retrieval/ dense + sparse hybrid with reciprocal rank fusion
+    sentinel/  egress monitor, canary, status
+    main.py    FastAPI application (loopback only)
+  scripts/     00 preflight, 01 pull, 02 index, 03 demo, 04 lockdown, 05 watch
+  tests/       61 tests
+  ui/          single-page interface
+  data/
+    corpus/    source documents  <- user input
+    workspace/ agent scratch (jailed)
+    artifacts/ generated deliverables
+    stores/    graph, vectors, cache, audit
+\end{lstlisting}

@@ -1,0 +1,8 @@
+.venv/
+data/stores/
+data/corpus/
+data/artifacts/
+data/workspace/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml

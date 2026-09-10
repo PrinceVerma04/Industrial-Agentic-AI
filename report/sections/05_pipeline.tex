@@ -1,0 +1,76 @@
+\section{The Pipeline}
+
+The system contains two distinct pipelines: an \emph{offline} indexing pipeline
+that runs when documents are added, and an \emph{online} query pipeline that
+runs per request. Separating them matters because indexing is expensive and
+one-off, whereas queries must be fast.
+
+\subsection{Offline: indexing}
+
+\begin{figure}[h]\centering
+\begin{tikzpicture}[font=\scriptsize,node distance=4.5mm,
+  s/.style={draw=rule,fill=soft,rounded corners=2pt,minimum height=7mm,
+            text width=2.45cm,align=center},
+  ar/.style={-{Stealth[length=2mm]},draw=accent}]
+\node[s] (a) {document\\\code{.pdf .txt .md}};
+\node[s,right=of a] (b) {rasterise\\(pypdfium2)};
+\node[s,right=of b] (c) {OCR if no\\text layer};
+\node[s,right=of c] (d) {semantic\\chunking};
+\node[s,right=of d] (e) {embed\\(bge-m3)};
+\node[s,below=8mm of e] (f) {typed entity\\extraction};
+\node[s,left=of f] (g) {canonicalise\\identifiers};
+\node[s,left=of g] (h) {upsert graph\\(idempotent)};
+\node[s,left=of h] (i) {Leiden\\communities};
+\node[s,left=of i] (j) {community\\summaries};
+\foreach \x/\y in {a/b,b/c,c/d,d/e,f/g,g/h,h/i,i/j} \draw[ar](\x)--(\y);
+\draw[ar] (e) -- (f);
+\end{tikzpicture}
+\caption{Indexing. Every chunk retains \code{\{doc\_id, page, bbox\}}, so any
+downstream claim can be traced to a page region.}
+\end{figure}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Rasterisation and OCR.] PDFs with a text layer are extracted directly.
+Pages without one are rendered at 2$\times$ and passed to an ONNX OCR engine on
+the CPU, keeping the GPU free for the language model.
+\item[Semantic chunking.] Splitting occurs on structure --- headings, numbered
+clauses, blank lines --- before falling back to size. Fixed-size chunking
+severs procedure steps from their headings, which is precisely the context the
+extractor needs.
+\item[Typed extraction.] Each chunk is passed to a small utility model with a
+JSON schema derived from the active ontology, using constrained decoding.
+Results are cached by \code{sha256(prompt + model)}.
+\item[Canonicalisation.] Identifiers are normalised so that every mention of an
+entity lands on one node. Seven spellings of an asset tag collapse to a single
+identity.
+\item[Community detection.] The graph is clustered with the Leiden algorithm
+and each cluster is summarised once, enabling corpus-wide thematic queries that
+no single passage could answer.
+\end{description}
+
+\begin{keybox}{Caching makes re-indexing nearly free}
+The extraction cache is keyed on chunk content and model. Re-running the index
+over an unchanged corpus completes in seconds; adding one document costs only
+that document's chunks. The expensive first pass is paid once per document, not
+once per query.
+\end{keybox}
+
+\subsection{Online: query}
+
+\begin{enumerate}
+\item \textbf{Classify.} Heuristics resolve most requests at zero cost;
+      a 4B model is consulted only when confidence is low.
+\item \textbf{Select and load.} The manager checks residency, evicts
+      least-recently-used models if the VRAM budget would be exceeded, and
+      records the decision.
+\item \textbf{Plan.} The reasoning model emits a typed list of steps with
+      arguments, including \code{\{\{stepN\}\}} references to earlier results.
+\item \textbf{Retrieve.} The query shape selects one of four strategies
+      (\S\ref{sec:modes}).
+\item \textbf{Execute.} Tool arguments are coerced to their declared schema,
+      then invoked. Failures are captured, never injected into output.
+\item \textbf{Critique.} The model assesses whether the goal was met and, if
+      not, states what is missing; the loop may replan.
+\item \textbf{Synthesise.} A grounded answer is produced from rendered tool
+      results with citations, alongside any generated files.
+\end{enumerate}

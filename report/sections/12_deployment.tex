@@ -1,0 +1,84 @@
+\section{Deployment and Operation}
+
+\subsection{Installation}
+
+The entire Python environment is project-local. Nothing is installed
+system-wide.
+
+\begin{lstlisting}
+python3.11 -m venv .venv
+./.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu128
+./.venv/bin/pip install -r requirements.txt
+./scripts/01_pull_models.sh          # approximately 24 GB of weights
+\end{lstlisting}
+
+\noindent The CUDA~12.8 index is mandatory on Blackwell: earlier PyTorch
+binaries lack \code{sm\_120} kernels and fail at runtime with
+\code{no kernel image is available for execution}.
+
+\subsection{Operating commands}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Command} & \textbf{Purpose} \\
+\midrule
+\code{make check} & Preflight: GPU, models, sandbox capability, binaries \\
+\code{make index} & Ingest \code{data/corpus} into vectors, graph and communities \\
+\code{make watch} & Live indexing dashboard with rate and estimated completion \\
+\code{make serve} & API and interface on \code{127.0.0.1:8077} \\
+\code{make demo} & Scripted run covering all five rubric points \\
+\code{make test} & 61 tests \\
+\code{make lockdown} & Install nftables egress denial (requires root) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Document placement}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Directory} & \textbf{Contents} \\
+\midrule
+\code{data/corpus/} & \textbf{Source documents.} \code{.pdf}, \code{.txt},
+  \code{.md}; subdirectories are traversed \\
+\code{data/workspace/} & Agent scratch space; file tools are jailed here \\
+\code{data/artifacts/} & Generated deliverables \\
+\code{data/stores/} & Graph, vectors, extraction cache, audit log \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent The filename becomes the \code{doc\_id} used in every citation, so
+documents should be named with their real identifiers.
+Images (\code{.png}, \code{.jpg}, \code{.tiff}) are \emph{not} automatically
+indexed --- they are readable on demand through the vision tools, or may be
+converted to PDF for indexing.
+
+\subsection{Air-gap procedure}
+
+\begin{lstlisting}
+tar czf models.tar.gz -C ~/.ollama models        # model weights
+./.venv/bin/pip download -r requirements.txt -d ./wheels
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+sudo ./scripts/04_lockdown.sh on                 # egress denial
+\end{lstlisting}
+
+\noindent The offline rehearsal should be performed in the first week of a
+deployment, not the last. A dependency that resolves a hostname on import is
+common and is only discovered by testing with the interface down.
+
+\subsection{Operational cautions}
+
+\begin{description}[leftmargin=0pt,style=nextline]
+\item[Single writer.] Indexing and serving cannot run concurrently; the graph
+store holds an exclusive lock. Stop the server before re-indexing.
+\item[Schema changes require a rebuild.] Altering the enabled ontology packs
+changes the database schema. Delete \code{data/stores/graph} and re-index.
+\item[The canary reports honestly.] On a machine with ordinary internet access
+it will correctly report that an external call succeeded. That is the monitor
+working, not failing. Apply the lockdown script to see it blocked.
+\end{description}
