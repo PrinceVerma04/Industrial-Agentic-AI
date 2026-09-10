@@ -49,17 +49,26 @@ def boot():
     if not graph_path.exists():
         store = GraphStore(graph_path)   # first run: create schema (writer)
     else:
-        try:
-            store = GraphStore(graph_path, read_only=True)
-        except Exception as e:
+        # A fresh reader can lose a narrow race against the API's own lock
+        # acquisition on startup, even though both hold compatible locks
+        # once open - retry briefly before treating it as a real problem.
+        last_err = None
+        for attempt in range(6):
+            try:
+                store = GraphStore(graph_path, read_only=True)
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(0.5)
+        else:
             # Store already exists - never fall back to a write open here,
             # that would grab the exclusive lock and collide with the API or
             # `make index`. Surface the real cause instead (see docs/concurrency).
             raise RuntimeError(
-                "Could not open the graph store read-only. Another process may "
-                "still be creating it, or a stale lock is held. Check with: "
-                "fuser -v data/stores/graph"
-            ) from e
+                "Could not open the graph store read-only after retrying. "
+                "Another process may still be creating it, or a stale lock is "
+                "held. Check with: fuser -v data/stores/graph"
+            ) from last_err
     index = VectorIndex(S.stores_dir / "qdrant")
     manager = get_manager()
     audit = AuditLog(S.stores_dir / "audit.jsonl")
