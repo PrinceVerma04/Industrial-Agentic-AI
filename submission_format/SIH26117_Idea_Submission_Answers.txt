@@ -1,0 +1,487 @@
+================================================================================
+SIH 2026 IDEA SUBMISSION -- PAGE-WISE ANSWERS
+Problem Statement SIH26117 | Mangalore Refinery and Petrochemicals Limited (MRPL)
+Prepared from the actual working codebase at /home/coral/Desktop/MP,
+verified live against the running system on 10 September 2026.
+================================================================================
+
+HOW TO USE THIS FILE
+--------------------
+This follows the exact slide structure of
+"SIH2026-IDEA-Presentation-Format (1).pptx" (6 content slides + 1 instruction
+slide, which you delete before upload). Each section below maps to one slide.
+Copy the bullet points directly onto the corresponding slide; do not paste
+paragraphs -- the official template explicitly penalises paragraph text and
+rewards points/diagrams. Fields marked [FILL IN] are things only you know
+(Team ID, Team Name) and are not invented here.
+
+
+================================================================================
+SLIDE 1 -- TITLE PAGE
+================================================================================
+
+Problem Statement ID   : SIH26117
+Problem Statement Title: Sovereign On-Premise Agentic AI Workbench using
+                          Open-Weight Multimodal LLMs for Confidential
+                          Industrial Work
+Theme                   : Smart Automation
+PS Category             : Software
+Team ID                 : [FILL IN]
+Team Name               : [FILL IN]
+
+
+================================================================================
+SLIDE 2 -- IDEA TITLE / PROPOSED SOLUTION
+================================================================================
+
+IDEA TITLE
+----------
+"Sovereign Workbench" -- a fully on-premise, air-gapped agentic AI system that
+plans, retrieves, reasons, codes, and produces real office documents from an
+organisation's own confidential documents, running entirely on a single
+GPU workstation with zero network egress.
+
+WHAT PROBLEM THIS SOLVES (restated precisely from the PS)
+-----------------------------------------------------------
+MRPL and similar PSUs/refineries/defence-linked manufacturers generate
+constant confidential knowledge work -- approval notes, engineering
+calculations, code for internal tools, review of scanned P&IDs and inspection
+reports. This cannot go through cloud AI (ChatGPT, Copilot, Claude.ai, etc.)
+because the underlying data -- P&IDs, financials, vendor terms, unreleased
+designs -- is confidential, and company policy keeps it on-premises. Result:
+engineers either lose hours doing this manually, or quietly leak confidential
+material into public tools to save time. Our system removes the false choice
+between productivity and confidentiality entirely.
+
+DETAILED EXPLANATION OF THE SOLUTION
+-------------------------------------
+A single working system, built and tested, comprising six integrated layers:
+
+1. MODEL GATEWAY (not locked to one model)
+   - Five open-weight models declared in config/models.yaml (a plain YAML
+     manifest, not code): qwen3:14b (reasoning/planning), qwen3:4b (routing/
+     extraction), qwen2.5-coder:7b (coding), qwen2.5vl:7b (vision), bge-m3
+     (embeddings).
+   - A VRAM-budgeted manager loads/evicts models automatically (LRU) to fit
+     a 16 GB consumer GPU -- the PS explicitly permits "a single workstation
+     or server with a mid-range GPU."
+   - Adding a new open-weight model later = adding one YAML block. Zero code
+     change. Directly satisfies the PS's "extensible without redesign"
+     constraint.
+
+2. GENUINELY AGENTIC EXECUTION (not a single-shot chatbot)
+   - Plan -> Execute -> Critique -> Synthesise loop (app/agent/loop.py).
+   - The planning model breaks a goal into typed tool calls; a critique step
+     checks whether the goal was actually met and can trigger a replan;
+     synthesis composes the final answer strictly from tool evidence.
+   - 12 schema-declared tools: file I/O, sandboxed code execution, symbolic
+     calculation, document generation, vision/OCR, graph and vector search.
+
+3. GRAPH RAG -- OUR MAIN DIFFERENTIATOR BEYOND THE PS
+   - A P&ID is *already a graph* (equipment nodes, FEEDS/MONITORS/PROTECTS
+     edges). We extract that structure into an embedded Kuzu graph database
+     instead of flattening everything into text embeddings.
+   - Four retrieval modes auto-selected by query shape: vector (plain
+     similarity), local (entity neighbourhood), global (corpus-wide themes
+     via Leiden community summaries), and traverse (multi-hop impact
+     analysis).
+   - Concrete, verified example: "Which units are affected if P-101A is
+     isolated?" -- V-1201 is two hops from P-101A (P-101A -FEEDS-> E-204
+     -FEEDS-> V-1201) and shares no vocabulary with the query. A vector
+     embedding model cannot retrieve it. A graph walk finds it every time,
+     deterministically. Verified live on the running system.
+
+4. MULTIMODAL DOCUMENT UNDERSTANDING
+   - RapidOCR (ONNX, CPU) for printed/scanned text -- keeps the GPU free for
+     the language model.
+   - qwen2.5vl:7b vision-language model for handwriting, annotations,
+     diagrams, and anything requiring layout comprehension, not just
+     transcription.
+
+5. REAL DELIVERABLES, NOT CHAT REPLIES
+   - Genuine .docx/.xlsx files built with python-docx/openpyxl from
+     structured fields (approval notes with signature tables and a
+     provenance footer), matching the PS's explicit requirement.
+   - Symbolic calculation via SymPy shows every derivation step (e.g. Net
+     Positive Suction Head), not just a floating-point answer -- the PS asks
+     for "calculations with steps shown."
+
+6. SOVEREIGNTY PROVEN, NOT ASSERTED (the PS's own words: "that's the actual
+   proof of the sovereign claim, not just a statement of it")
+   - Layer 1: generated code runs inside a kernel network namespace
+     (unshare -rn) with no route out -- a kernel guarantee, not a policy
+     flag. socket.create_connection() raises OSError: Network is
+     unreachable.
+   - Layer 2: host-level nftables default-deny egress (scripts/04_lockdown.sh).
+   - Layer 3: a live "sentinel" dashboard panel showing external connection
+     count and a one-click canary button that deliberately tries to reach
+     1.1.1.1:53 and reports whether it was blocked.
+   - Layer 4: every prompt, model choice, and tool call is written to a
+     SHA-256 hash-chained audit log -- any tampering breaks verification at
+     the exact corrupted record, making it usable as compliance evidence.
+
+INNOVATION AND UNIQUENESS
+--------------------------
+- Most "on-prem AI" submissions will be a single chatbot pointed at a local
+  model. We built a five-model orchestrated system with automatic routing,
+  a real agent loop, a real sandbox, and real document generation --
+  covering all five of the PS's explicit demonstration requirements with
+  working code, not slideware.
+- Graph RAG for P&IDs is not a generic RAG wrapper: it directly encodes the
+  actual failure mode of vector search in industrial settings (dependency
+  and impact questions), and answers a class of question competitors'
+  plain-RAG systems will get wrong live in front of the judges.
+- The sovereignty proof is falsifiable in front of a judge in under thirty
+  seconds by pressing a "canary" button live -- an assertion becomes an
+  observation.
+- Zero Docker dependency (embedded Kuzu graph DB, embedded Qdrant vector
+  store, unshare-based sandbox) because Docker often is not available on a
+  locked-down enterprise or venue machine without admin rights -- a real
+  constraint we hit and solved, which materially improves deployability at
+  an actual PSU.
+
+
+================================================================================
+SLIDE 3 -- TECHNICAL APPROACH
+================================================================================
+
+TECHNOLOGIES USED
+------------------
+Inference / models:
+  - Ollama (local model server, automatic load/unload -> VRAM management
+    essentially for free)
+  - qwen3:14b, qwen3:4b, qwen2.5-coder:7b, qwen2.5vl:7b, bge-m3 -- all
+    open-weight, 4-bit quantised
+
+Retrieval / storage (all embedded, zero network ports):
+  - Kuzu -- embedded property-graph database (Cypher-like queries, no
+    server process)
+  - Qdrant (local mode) -- embedded vector store, combined dense+sparse
+  - BM25 (rank-bm25) -- exact lexical matching for asset tags like "P-101A"
+    that embeddings often confuse with "P-101B"
+  - Reciprocal Rank Fusion -- combines BM25 + vector ranks on a common,
+    scale-free scale
+  - Leiden community detection (python-igraph) -- corpus-wide theme
+    clustering for "what are the recurring findings" style questions
+
+Document understanding:
+  - RapidOCR (ONNX Runtime, CPU-only)
+  - qwen2.5vl:7b vision-language model (Ollama)
+
+Agent / tooling / safety:
+  - FastAPI + Uvicorn (loopback-only, 127.0.0.1:8077)
+  - Pydantic (typed schema validation at every boundary)
+  - Linux network namespaces (unshare -rn) for the code sandbox; Docker
+    --network none as an automatic upgrade path if available
+  - SymPy for exact symbolic calculation with derivation steps
+  - python-docx / python-pptx / openpyxl for genuine Office document output
+  - nftables for host-level egress denial
+  - SHA-256 hash chain for tamper-evident audit logging
+
+Application layer:
+  - Streamlit test console (127.0.0.1:8501) -- inspection-first UI showing
+    every tool call's raw arguments and output, not just a chat bubble
+  - Python 3.11, project-local virtualenv, 99 packages, nothing installed
+    system-wide
+
+METHODOLOGY / PROCESS FOR IMPLEMENTATION
+-------------------------------------------
+Two distinct pipelines:
+
+(A) OFFLINE INDEXING PIPELINE (runs once per document, cached thereafter)
+    document (.pdf/.txt/.md)
+      -> rasterise (pypdfium2) if no text layer
+      -> OCR (RapidOCR, CPU) if scanned
+      -> semantic chunking (splits on structure: headings/clauses, not
+         arbitrary character counts, so procedure steps stay with their
+         headings)
+      -> embed each chunk (bge-m3, dense+sparse in one pass)
+      -> typed entity/relation extraction against the active ontology
+         (config/ontology.yaml -- a "general" pack plus an optional
+         "industrial" pack, so the schema is configuration, not code)
+      -> canonicalise identifiers (multiple spellings of one asset tag
+         collapse to one node)
+      -> upsert into the Kuzu graph (idempotent)
+      -> Leiden community detection + one summary per cluster
+    Every chunk retains {doc_id, page, bbox}, so every downstream answer
+    traces back to an exact page. Extraction is cached by
+    sha256(prompt + model): re-indexing an unchanged corpus completes in
+    seconds; adding one new document costs only that document's chunks.
+
+(B) ONLINE QUERY PIPELINE (runs per request, must be fast)
+    1. Classify   -- regex heuristics resolve most requests free; a small
+                     4B model is consulted only when heuristics are unsure
+                     (task categories: code / vision / extract / reason /
+                     plan / doc / summarize)
+    2. Select     -- VRAM-aware manager picks the right resident/loadable
+                     model for the task, evicting least-recently-used if the
+                     budget would be exceeded; every decision is logged and
+                     shown live in the UI (proves automatic model selection,
+                     PS requirement #1)
+    3. Plan       -- reasoning model emits a typed list of tool-call steps
+    4. Retrieve   -- query shape auto-selects one of 4 modes: vector / local
+                     (entity neighbourhood) / global (corpus themes) /
+                     traverse (multi-hop impact analysis)
+    5. Execute    -- each tool call's arguments are coerced to a declared
+                     JSON schema, then run; a failed step is reported to the
+                     agent, never silently substituted into a deliverable
+    6. Critique   -- checks whether the goal was actually met; if not,
+                     triggers a replan (bounded iterations)
+    7. Synthesise -- final answer built strictly from retrieved evidence,
+                     with [doc_id p.N] citations, plus any generated file
+
+WORKING PROTOTYPE -- STATE AS OF 10 SEPTEMBER 2026 (measured, not projected)
+------------------------------------------------------------------------------
+  - 70 automated tests, full suite in ~1 second, all passing
+  - Full agent run (plan+execute+critique+synthesise): ~12.7 s after a
+    measured 13.8x extraction speed-up (root-caused to unbounded reasoning
+    token generation, fixed via per-task generation limits in
+    config/models.yaml)
+  - Live end-to-end verified today: query "Which units are affected if
+    P-101A is isolated" correctly triggers graph-traversal mode, returns
+    the correct two-hop equipment chain with citations, in milliseconds for
+    retrieval and single-digit seconds for the full agent run
+  - Sovereignty panel live-verified: external_connections: 0,
+    blocked_attempts on demand via the canary button, audit_chain_valid: true
+  - A prior corpus/ontology validation run (documented in the accompanying
+    project report) produced 499 graph nodes / 391 typed relations / 37
+    community summaries from a 5-document test corpus, proving the ontology
+    generalises beyond a single hardcoded domain
+
+
+================================================================================
+SLIDE 4 -- FEASIBILITY AND VIABILITY
+================================================================================
+
+FEASIBILITY ANALYSIS
+----------------------
+- This is not a concept: it is a running system, verified end-to-end today
+  against all five of the PS's explicit demonstration requirements, plus a
+  working Graph RAG differentiator. Every claim in this submission was
+  checked against the live process, not written from memory.
+- Hardware requirement matches the PS's own stated allowance: "a single
+  workstation or server with a mid-range GPU." Reference implementation
+  runs on one RTX 5080 (16 GB), 32 CPU cores, 59 GB RAM -- squarely
+  consumer-grade, not a data-centre requirement.
+- Software stack is 100% open-source / open-weight. No licensing blocker,
+  no per-seat cost, no cloud dependency of any kind.
+- Deployment is "copy a directory": all databases are embedded
+  (Kuzu, Qdrant local mode, SQLite) -- no server processes to install,
+  patch, or secure, and specifically no Docker requirement, which matters
+  because Docker is frequently unavailable on locked-down enterprise
+  machines without admin rights (a real constraint the team hit and solved
+  during development).
+- A documented sizing model exists for scaling beyond a single pilot
+  workstation (departmental / plant-wide / enterprise tiers), so the path
+  from PoC to production deployment at MRPL is already mapped, not
+  hand-waved.
+
+POTENTIAL CHALLENGES AND RISKS (stated honestly, with evidence)
+-------------------------------------------------------------------
+1. Embedded graph store allows only ONE writer process at a time.
+   Risk: indexing and serving cannot run concurrently on a single pilot
+   machine.
+   Status: Understood and engineered around -- the API is the sole process
+   permitted to hold the write lock; a strict stop-index-restart procedure
+   is documented and automated (make index / make start). Acceptable for a
+   pilot; flagged as the first component to replace (with a clustered graph
+   DB) at plant-wide scale.
+
+2. Bulk ingestion throughput at scale.
+   Risk: indexing an entire refinery's document archive on one GPU is a
+   multi-week/month job at naive throughput.
+   Status: Root-caused and already improved 13.8x by removing wasted
+   reasoning-token generation. Documented mitigation path: parallel
+   extraction across GPUs (near-linear), tiered extraction (only governing
+   documents get full graph extraction), incremental ingestion after the
+   initial load, and vLLM continuous batching for a further 4-8x.
+
+3. Prompt injection from an ingested document.
+   Risk: a malicious or malformed document could attempt to steer the
+   planner via its own text content.
+   Status: Partially mitigated today -- all tools are typed, enumerated,
+   and schema-validated, which bounds what a steered plan can actually do
+   (it cannot invoke an undeclared capability). Full mitigation (content
+   provenance tagging, planner-level content/instruction separation) is a
+   near-term roadmap item, stated as such rather than claimed solved.
+
+4. Grounding / hallucination on out-of-corpus questions.
+   Risk: any LLM-based system can, in principle, answer confidently from
+   its own training weights instead of the organisation's documents,
+   which is dangerous when the output becomes a signed approval note.
+   Status: Directly observed during testing, root-caused (the agent's
+   planner attempted dead-end web searches, then fabricated an answer from
+   an unrelated indexed document when nothing relevant was found), and
+   fixed at the prompt level: the agent now explicitly refuses and states
+   "not found in the knowledge base, no internet access to fetch it" when
+   retrieval finds nothing relevant. Verified live, before and after. Also
+   documented honestly as a prompt-level mitigation, not yet a mechanical
+   guarantee -- a relevance-threshold gate on retrieval is the identified
+   next hardening step.
+
+5. Standalone image files and .docx/.xlsx source documents are not yet
+   auto-indexed by the ingestion pipeline (images are still readable
+   on-demand via the vision tool).
+   Status: Known, scoped, on the immediate roadmap; does not block the five
+   core demonstration requirements, all of which are already satisfied by
+   the current pipeline (PDF/scan ingestion + vision tool cover the
+   multimodal requirement independently).
+
+STRATEGIES FOR OVERCOMING THESE CHALLENGES
+---------------------------------------------
+- Every risk above is already logged in a maintained risk register with
+  likelihood, impact, and a concrete mitigation -- this is an engineering
+  discipline artefact, not an afterthought for the pitch.
+- A staged deployment plan (pilot -> departmental -> plant-wide ->
+  enterprise) explicitly identifies which architectural component must be
+  swapped at each tier (e.g. Kuzu embedded -> Neo4j cluster; Ollama ->
+  vLLM with tensor parallelism), so scaling is a planned migration, not an
+  unknown.
+- Continuous verification discipline: every fix made during development
+  was proven with a live before/after test against the running system
+  (not just code review), and regression-tested via the 70-test automated
+  suite before being considered complete.
+
+
+================================================================================
+SLIDE 5 -- IMPACT AND BENEFITS
+================================================================================
+
+TARGET AUDIENCE
+-----------------
+Primary: MRPL's engineering, inspection, and approvals workforce, and by
+extension any PSU, refinery, defence-linked manufacturer, or government
+office that handles routine-but-sensitive knowledge work (per the PS's own
+framing: "refineries, PSUs, defence-linked manufacturing units and
+government offices").
+
+Direct users: process/rotating-equipment engineers drafting approval notes;
+inspection teams processing scanned reports; planning teams doing
+impact/isolation analysis before shutdowns; internal tool developers needing
+a coding assistant that cannot leak proprietary code.
+
+POTENTIAL IMPACT
+-------------------
+- Eliminates the false choice currently forced on engineers: do confidential
+  work manually and slowly, or paste it into a public AI tool and create a
+  compliance/security incident. The PS names this exact dilemma; this
+  system removes it structurally, not by policy reminder.
+- Converts a multi-step manual workflow (read scan -> cross-reference
+  P&ID -> determine impact -> draft note -> route for approval) into a
+  single agentic request producing a real, ready-to-review .docx artefact
+  with provenance citations back to source pages -- auditable, not a black
+  box.
+- Graph-based impact analysis (e.g. "if we isolate P-101A, what else is
+  affected") directly supports safer shutdown/isolation planning by
+  surfacing indirect, non-obvious dependencies that a manual document
+  search or a plain-text AI assistant would miss entirely.
+
+BENEFITS
+----------
+Security / compliance:
+  - Zero external network calls, proven live via kernel-level isolation,
+    a host firewall, a real-time monitor, and a tamper-evident audit log --
+    directly answers the PS's sovereignty requirement, which it states is
+    the hardest and most important one to actually prove.
+  - Removes the incentive for employees to use unauthorised public AI
+    tools on confidential material, closing a real and current data-leak
+    vector.
+
+Economic:
+  - Hours of manual cross-referencing and drafting per approval note
+    reduced to a single-digit-second to low-minute agentic run.
+  - Runs on commodity hardware already within reach of a single department
+    (one mid-range GPU) -- no recurring per-seat cloud AI licensing cost,
+    no data-centre procurement required to pilot.
+  - Open-weight models throughout: no vendor lock-in, no per-token API
+    billing, and the model manifest is swappable as better open-weight
+    models are released, protecting the investment over time.
+
+Operational / safety:
+  - Faster, more complete impact analysis before equipment isolation
+    reduces the chance of an unplanned trip caused by an overlooked
+    downstream dependency.
+  - A hash-chained audit trail of every AI-assisted decision step provides
+    a defensible record for internal review or regulatory audit -- the
+    system does not just produce an answer, it produces evidence of how
+    the answer was produced.
+
+Strategic / extensibility:
+  - The same architecture generalises beyond MRPL: the ontology is
+    YAML-configured (a "general" pack plus domain packs), so the identical
+    system can be redeployed for any PSU or government office with a
+    different confidential-document domain, without a code rewrite --
+    directly satisfying the PS's "extensible without redesign" constraint
+    and multiplying the impact of a single engineering investment across
+    the wider PSU ecosystem.
+
+
+================================================================================
+SLIDE 6 -- RESEARCH AND REFERENCES
+================================================================================
+
+PROBLEM STATEMENT SOURCE
+---------------------------
+- SIH26117, Smart India Hackathon 2026, Software category, Smart Automation
+  theme, posed by Mangalore Refinery and Petrochemicals Limited (MRPL).
+
+PRIMARY TECHNICAL REFERENCES USED IN DESIGN AND IMPLEMENTATION
+--------------------------------------------------------------------
+- Ollama documentation (local model serving, automatic load/unload,
+  OpenAI-compatible and native APIs): https://ollama.com
+- Qwen model family (Qwen3, Qwen2.5, Qwen2.5-VL) model cards and technical
+  reports, Alibaba Cloud / Qwen team -- basis for selecting qwen3:14b
+  (reasoning), qwen3:4b (routing), qwen2.5-coder:7b (coding), qwen2.5vl:7b
+  (vision).
+- BAAI BGE-M3 embedding model technical report -- basis for selecting a
+  single embedding model capable of both dense and sparse representations
+  in one pass.
+- Kuzu graph database documentation, concurrency model, and Cypher-subset
+  query reference: https://docs.kuzudb.com -- directly informed the
+  single-writer architectural constraint documented and engineered around
+  in this submission.
+- Qdrant documentation, local/embedded mode: https://qdrant.tech -- basis
+  for running the vector store in-process with no server/port.
+  RapidOCR (ONNX Runtime) documentation -- basis for CPU-only OCR that
+  leaves the GPU free for the language model.
+- Traag, V.A., Waltman, L., van Eck, N.J. (2019). "From Louvain to Leiden:
+  guaranteeing well-connected communities." Scientific Reports 9, 5233 --
+  basis for using Leiden rather than Louvain community detection for
+  corpus-wide theme summarisation.
+- Reciprocal Rank Fusion: Cormack, G.V., Clarke, C.L.A., Buettcher, S.
+  (2009). "Reciprocal rank fusion outperforms Condorcet and individual
+  rank learning methods." SIGIR '09 -- basis for the fusion method
+  combining BM25 and dense vector retrieval.
+- Robertson, S., Zaragoza, H. (2009). "The Probabilistic Relevance
+  Framework: BM25 and Beyond" -- basis for retaining lexical (BM25) search
+  alongside dense vectors specifically for exact industrial asset-tag
+  matching (e.g. "P-101A" vs. "P-101B"), a known weak point of pure
+  embedding search.
+- Linux `unshare`/network-namespaces man pages (namespaces(7),
+  network_namespaces(7)) -- basis for the unprivileged, kernel-enforced
+  code sandbox requiring no root and no Docker.
+- nftables documentation -- basis for the host-level default-deny egress
+  firewall used in the lockdown script.
+- General Graph RAG concept: Microsoft Research, "From Local to Global: A
+  Graph RAG Approach to Query-Focused Summarization" (2024) -- conceptual
+  basis for combining typed knowledge-graph extraction with community
+  summarisation to answer corpus-wide and multi-hop questions that plain
+  vector RAG cannot.
+
+INTERNAL VALIDATION ARTEFACTS (produced by this team)
+----------------------------------------------------------
+- Full project report (SIH26117_Project_Report.zip / report/main.pdf):
+  architecture, technology-stack rationale, measured performance,
+  enterprise sizing model, risk register, and roadmap.
+- Dashboard_Operator_Guide.zip (report/dashboard_guide/): dashboard field
+  reference, query-processing pipeline trace, reindexing procedure, and a
+  concrete grounding/hallucination verification checklist -- produced from
+  and verified against the live running system.
+- 70-test automated regression suite (tests/), runnable in under a second,
+  covering routing, retrieval, sandboxing, document generation, and audit
+  integrity.
+
+
+================================================================================
+END OF FILE
+================================================================================
