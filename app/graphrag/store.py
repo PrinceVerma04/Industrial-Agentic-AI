@@ -17,9 +17,14 @@ from app.graphrag.schema import NODE_TYPES, REL_PAIRS, user_attrs
 
 class GraphStore:
     def __init__(self, path: Path, read_only: bool = False):
-        """K\u00f9zu permits one writer but many readers. Anything that only
-        queries - the Streamlit console, the API - should open read-only so it
-        does not block indexing, and is not blocked by it."""
+        """K\u00f9zu allows many read-only Database objects on the same path
+        concurrently, OR exactly one read-write Database - never a mix (this
+        is enforced by the kuzu library itself: a read-only Database cannot
+        be opened while a read-write one on the same path exists, and vice
+        versa). Only ONE process may ever hold this path open read-write.
+        The API (app/main.py) is that process; anything else that needs the
+        graph - the Streamlit console included - must go through the API
+        over HTTP rather than opening this path itself."""
         path.parent.mkdir(parents=True, exist_ok=True)
         self.read_only = read_only
         if read_only:

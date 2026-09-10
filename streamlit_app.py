@@ -9,8 +9,14 @@ status lines and obvious the moment the artefact was opened.
 
     streamlit run streamlit_app.py
 
-NOTE: this process holds the K\u00f9zu write lock, so `make index` cannot run
-while it is up. Stop it before re-indexing.
+This console never opens the graph store or vector index itself - it talks
+to the API (app/main.py) over loopback HTTP for everything that touches
+them. Kuzu's own Database class does not support a read-only Database
+coexisting with a read-write one on the same path (confirmed against the
+installed kuzu==0.11.3: "there cannot be multiple Database objects created
+with the same database path" when one of them is not read-only) - so the API
+process must be the only one that ever opens data/stores/graph. Run the API
+first (`make serve` or `make start`); this console is a pure client of it.
 """
 from __future__ import annotations
 
@@ -19,96 +25,39 @@ import time
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 
-from app.agent.loop import Agent
-from app.core.audit import AuditLog
-from app.core.config import get_manifest, get_settings
-from app.graphrag.communities import CommunityStore
-from app.graphrag.retrieve import GraphRetriever, format_context
-from app.graphrag.schema import NODE_TYPES, REL_PAIRS, rel_types
-from app.graphrag.store import GraphStore
-from app.retrieval.vector import VectorIndex
-from app.router.manager import get_manager
-from app.sentinel.monitor import Sentinel
-from app.tools import registry
+from app.core.config import get_settings
+from app.graphrag.schema import NODE_TYPES, REL_PAIRS
 from app.tools.sandbox import probe, run_python
 
 st.set_page_config(page_title="Sovereign AI Workbench",
                    page_icon="\U0001F512", layout="wide")
 
 S = get_settings()
+API = "http://127.0.0.1:8077"
 
 
-# ------------------------------------------------------------------ wiring --
-@st.cache_resource(show_spinner="Opening stores and model manager...")
-def boot():
-    # Read-only: this console never writes to the graph, so it must not take
-    # the exclusive write lock and block `make index`.
-    graph_path = S.stores_dir / "graph"
-    if not graph_path.exists():
-        store = GraphStore(graph_path)   # first run: create schema (writer)
-    else:
-        # A fresh reader can lose a narrow race against the API's own lock
-        # acquisition on startup, even though both hold compatible locks
-        # once open - retry briefly before treating it as a real problem.
-        last_err = None
-        for attempt in range(6):
-            try:
-                store = GraphStore(graph_path, read_only=True)
-                break
-            except Exception as e:
-                last_err = e
-                time.sleep(0.5)
-        else:
-            # Store already exists - never fall back to a write open here,
-            # that would grab the exclusive lock and collide with the API or
-            # `make index`. Surface the real cause instead (see docs/concurrency).
-            raise RuntimeError(
-                "Could not open the graph store read-only after retrying. "
-                "Another process may still be creating it, or a stale lock is "
-                "held. Check with: fuser -v data/stores/graph"
-            ) from last_err
-    index = VectorIndex(S.stores_dir / "qdrant")
-    manager = get_manager()
-    audit = AuditLog(S.stores_dir / "audit.jsonl")
-    retriever = GraphRetriever(store, index, manager)
-    registry.register_all({"store": store, "index": index, "retriever": retriever})
-    sentinel = Sentinel()
-    sentinel.start()
-    return store, index, manager, audit, retriever, sentinel
+def api_get(path: str, **params):
+    r = requests.get(f"{API}{path}", params=params, timeout=180)
+    r.raise_for_status()
+    return r.json()
+
+
+def api_post(path: str, **body):
+    r = requests.post(f"{API}{path}", json=body, timeout=180)
+    r.raise_for_status()
+    return r.json()
 
 
 try:
-    store, index, manager, audit, retriever, sentinel = boot()
-except RuntimeError as e:
-    st.error(f"Could not open the graph store: {e}")
-    st.info("Another process holds the write lock. Stop `make index` or a second "
-            "copy of this app, then reload. Check with:  "
-            "`fuser -v data/stores/graph`")
+    health = api_get("/health")
+except requests.exceptions.RequestException as e:
+    st.error(f"Cannot reach the API at {API}: {type(e).__name__}: {e}")
+    st.info("Start it first: `make serve` (or `make start` for both together), "
+            "then reload this page.")
     st.stop()
-
-
-def vector_count() -> int:
-    try:
-        return index.client.count("chunks").count
-    except Exception:
-        return 0
-
-
-def graph_totals() -> tuple[int, int]:
-    nodes = sum(store.stats().values())
-    edges, seen = 0, set()
-    for rel, a, b in rel_types():
-        if (rel, a, b) in seen:
-            continue
-        seen.add((rel, a, b))
-        try:
-            r = store.rows(f"MATCH (x:{a})-[e:{rel}]->(y:{b}) RETURN count(e) AS c")
-            edges += r[0]["c"] if r else 0
-        except Exception:
-            pass
-    return nodes, edges
 
 
 # ------------------------------------------------------------------ sidebar -
@@ -117,20 +66,19 @@ with st.sidebar:
     st.caption("SIH26117 \u00b7 MRPL \u00b7 on-premise, air-gapped")
 
     st.subheader("Sovereignty")
-    stat = sentinel.status()
-    caps = probe()
-    backend = "docker" if caps["docker"] else ("netns" if caps["netns"] else "rlimit only")
-    ok, bad = audit.verify()
+    sov = api_get("/sovereignty")
 
     c1, c2 = st.columns(2)
-    c1.metric("External calls", stat["external_connections"])
-    c2.metric("Blocked", stat["blocked_attempts"])
+    c1.metric("External calls", sov["external_connections"])
+    c2.metric("Blocked", sov["blocked_attempts"])
+    backend = "docker" if sov["sandbox"]["docker"] else (
+        "netns" if sov["sandbox"]["netns"] else "rlimit only")
     st.write(f"Sandbox: **{backend}**")
-    st.write("Audit chain: " + ("**valid**" if ok else f"**BROKEN at {bad}**"))
+    st.write("Audit chain: " + ("**valid**" if sov["audit_chain_valid"]
+                                else f"**BROKEN at {sov['audit_first_bad_index']}**"))
 
     if st.button("Attempt external call", use_container_width=True):
-        r = sentinel.canary()
-        audit.append("canary", **r)
+        r = api_post("/sovereignty/canary")
         (st.success if r["blocked"] else st.warning)(
             f"{r['verdict']} \u2014 {r['detail']}")
         if not r["blocked"]:
@@ -139,15 +87,9 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Index")
-    n_nodes, n_edges = graph_totals()
-    st.write(f"Graph: **{n_nodes}** nodes / **{n_edges}** edges")
-    st.write(f"Vectors: **{vector_count()}** chunks")
-    try:
-        st.write(f"Communities: **{len(CommunityStore(S.stores_dir/'communities.db').all())}**")
-    except Exception:
-        st.write("Communities: 0")
-    st.caption(f"profile `{manager.profile}` \u00b7 ontology `{S.ontology}`")
-    st.caption(f"budget {manager.budget} GB \u00b7 resident {manager.used_gb():.1f} GB")
+    st.write(f"Graph: **{health['graph_nodes']}** nodes / **{health['graph_edges']}** edges")
+    st.write(f"Vectors: **{health['vector_chunks']}** chunks")
+    st.caption(f"profile `{health['profile']}` \u00b7 ontology `{S.ontology}`")
 
 
 tabs = st.tabs(["Ask", "Search", "Graph", "Documents", "Models", "Audit"])
@@ -159,10 +101,10 @@ with tabs[0]:
                "Typically 45\u2013120 s. Always open the generated file.")
 
     examples = [
-        "What skills appear across the resumes?",
-        "Summarise the main contribution of the electronics paper with citations.",
-        "Which candidate has the most machine learning experience? Explain why.",
-        "Compare the candidates and write a short docx summary.",
+        "Which units are affected if P-101A is isolated, and draft an approval "
+        "note recommending seal replacement.",
+        "Summarise the P-101A inspection findings.",
+        "What is downstream of E-204?",
     ]
     pick = st.selectbox("Example goals", ["(write my own)"] + examples)
     goal = st.text_area("Goal", value="" if pick.startswith("(") else pick, height=90)
@@ -172,39 +114,39 @@ with tabs[0]:
     steps = c2.number_input("Max steps", 1, 8, 4)
 
     if st.button("Run agent", type="primary", disabled=not goal.strip()):
-        agent = Agent(manager, audit, max_iterations=int(iters), max_steps=int(steps))
         t0 = time.time()
         with st.spinner("Planning and executing..."):
             try:
-                res = agent.run(goal)
-            except Exception as e:
+                res = api_post("/ask", goal=goal, max_iterations=int(iters),
+                               max_steps=int(steps))
+            except requests.exceptions.RequestException as e:
                 st.error(f"{type(e).__name__}: {e}")
                 st.stop()
-        st.success(f"Completed in {time.time()-t0:.0f}s \u00b7 {res.iterations} iteration(s)")
+        st.success(f"Completed in {time.time()-t0:.0f}s \u00b7 {res['iterations']} iteration(s)")
 
         st.markdown("### Answer")
-        st.markdown(res.answer or "_no answer produced_")
+        st.markdown(res["answer"] or "_no answer produced_")
 
         st.markdown("### Steps")
-        for s in res.steps:
-            icon = "\u2705" if s.ok else "\u274C"
-            with st.expander(f"{icon} `{s.tool}` \u00b7 {s.ms} ms \u00b7 {s.intent}",
-                             expanded=not s.ok):
+        for s in res["steps"]:
+            icon = "\u2705" if s["ok"] else "\u274C"
+            with st.expander(f"{icon} `{s['tool']}` \u00b7 {s['ms']} ms \u00b7 {s['intent']}",
+                             expanded=not s["ok"]):
                 st.caption("Arguments actually passed (after coercion)")
-                st.json(s.arguments, expanded=False)
+                st.json(s["arguments"], expanded=False)
                 st.caption("Raw tool output")
-                st.code(str(s.output)[:4000])
+                st.code(s["output"])
 
-        if res.decisions:
+        if res["decisions"]:
             st.markdown("### Model routing")
-            st.dataframe(pd.DataFrame(res.decisions)[
+            st.dataframe(pd.DataFrame(res["decisions"])[
                 ["task", "chosen", "tag", "reason", "evicted", "load_ms"]],
                 use_container_width=True, hide_index=True)
 
         st.markdown("### Artefacts")
-        if not res.artifacts:
+        if not res["artifacts"]:
             st.info("No file was generated.")
-        for a in res.artifacts:
+        for a in res["artifacts"]:
             p = Path(a)
             if not p.exists():
                 st.error(f"{a} \u2014 reported but missing")
@@ -226,15 +168,14 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Retrieval only")
     st.caption("Instant. Shows which of the four modes fired and why.")
-    q = st.text_input("Query", placeholder="e.g. what skills appear across the resumes")
+    q = st.text_input("Query", placeholder="e.g. which units are affected if P-101A is isolated")
     k = st.slider("Passages", 1, 20, 6)
     if st.button("Retrieve", disabled=not q.strip()):
         t0 = time.time()
-        res = retriever.retrieve(q, k)
-        plan = res["plan"]
-        st.success(f"mode **{plan.mode}** in {(time.time()-t0)*1000:.0f} ms")
-        st.caption(f"Why: {plan.reason}" +
-                   (f" \u00b7 anchors: {plan.anchors}" if plan.anchors else ""))
+        res = api_get("/search", q=q, k=k)
+        st.success(f"mode **{res['mode']}** in {(time.time()-t0)*1000:.0f} ms")
+        st.caption(f"Why: {res['why']}" +
+                   (f" \u00b7 anchors: {res['anchors']}" if res.get("anchors") else ""))
 
         nodes = res.get("nodes") or []
         if nodes:
@@ -250,9 +191,6 @@ with tabs[1]:
             with st.expander(f"[{c.get('doc_id','?')} p.{c.get('page','?')}]"):
                 st.text(c["text"][:2500])
 
-        with st.expander("Context as the model receives it"):
-            st.code(format_context(res))
-
 # -------------------------------------------------------------------- GRAPH -
 with tabs[2]:
     st.subheader("Knowledge graph")
@@ -261,24 +199,20 @@ with tabs[2]:
     ent = c1.text_input("Entity", placeholder="e.g. P-101A, or a person's name")
     hops = c2.slider("Hops", 1, 4, 2)
     if st.button("Traverse", disabled=not ent.strip()):
-        hits = store.find(ent.strip())
-        if not hits:
+        res = api_get("/graph/neighborhood", entity=ent.strip(), hops=hops)
+        if not res["found"]:
             st.warning(f"No entity matching '{ent}'. Try the Search tab to find names.")
         else:
-            anchor = hits[0]
+            anchor = res["anchor"]
+            rows = res["rows"]
             st.write(f"Anchor: **{anchor['name']}** (`{anchor['type']}`)")
-            rows = store.neighborhood(anchor["type"], anchor["key"], hops=hops)
-            rows = [r for r in rows if r["key"] != anchor["key"]]
             st.write(f"**{len(rows)}** entities within {hops} hop(s)")
             if rows:
                 st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-            one = [r for r in store.neighborhood(anchor["type"], anchor["key"], hops=1)
-                   if r["key"] != anchor["key"]]
-            extra = {r["key"] for r in rows} - {r["key"] for r in one}
-            if extra:
-                st.info(f"{len(extra)} of these are reachable only beyond one hop \u2014 "
-                        "indirect dependencies vector search would miss: "
-                        + ", ".join(sorted(r["name"] for r in rows if r["key"] in extra)[:8]))
+            if res["indirect_only"]:
+                st.info(f"{len(res['indirect_only'])} of these are reachable only beyond "
+                        "one hop \u2014 indirect dependencies vector search would miss: "
+                        + ", ".join(res["indirect_only"][:8]))
 
     with st.expander("Active ontology"):
         st.write(f"**{len(NODE_TYPES)}** node types \u00b7 **{len(REL_PAIRS)}** relations")
@@ -286,7 +220,7 @@ with tabs[2]:
             [{"node type": n, "attributes": ", ".join(a)} for n, a in NODE_TYPES.items()]),
             use_container_width=True, hide_index=True)
     with st.expander("Node counts"):
-        st.dataframe(pd.DataFrame(sorted(store.stats().items(), key=lambda x: -x[1]),
+        st.dataframe(pd.DataFrame(sorted(health["graph"].items(), key=lambda x: -x[1]),
                                   columns=["type", "count"]),
                      use_container_width=True, hide_index=True)
 
@@ -313,7 +247,7 @@ with tabs[3]:
     if up:
         for f in up:
             (S.corpus_dir / f.name).write_bytes(f.getbuffer())
-        st.success(f"Copied {len(up)} file(s). Stop this app, run `make index`, restart.")
+        st.success(f"Copied {len(up)} file(s). Stop the API, run `make index`, restart.")
 
     st.divider()
     st.subheader("Generated artefacts")
@@ -337,24 +271,26 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Model catalogue")
     st.caption("Adding a model is a block in config/models.yaml \u2014 no code change.")
+    m = api_get("/models")
     st.dataframe(pd.DataFrame([{
-        "id": s.id, "tag": s.tag, "VRAM GB": s.vram_gb, "ctx": s.ctx,
-        "priority": s.priority, "capabilities": ", ".join(s.capabilities),
-        "resident": "yes" if s.id in manager.resident else "",
-    } for s in manager.specs.values()]), use_container_width=True, hide_index=True)
+        "id": s["id"], "tag": s["tag"], "VRAM GB": s["vram_gb"], "ctx": s["ctx"],
+        "priority": s["priority"], "capabilities": ", ".join(s["capabilities"]),
+        "resident": "yes" if s["id"] in m["resident"] else "",
+    } for s in m["catalogue"]]), use_container_width=True, hide_index=True)
 
-    st.write(f"Budget **{manager.budget} GB** \u00b7 resident **{manager.used_gb():.1f} GB**")
-    if manager.decisions:
-        st.markdown("#### Routing decisions this session")
-        st.dataframe(pd.DataFrame([d.__dict__ for d in manager.decisions])[
+    st.write(f"Budget **{m['budget_gb']} GB** \u00b7 resident **{m['used_gb']:.1f} GB**")
+    if m["decisions"]:
+        st.markdown("#### Routing decisions (API session)")
+        st.dataframe(pd.DataFrame(m["decisions"])[
             ["task", "capability", "tag", "reason", "evicted", "load_ms"]],
             use_container_width=True, hide_index=True)
     else:
-        st.info("No model has been invoked yet in this session.")
+        st.info("No model has been invoked yet in the API session.")
 
     st.divider()
     st.subheader("Sandbox check")
-    st.caption("Rubric point 3 and half of point 5, verifiable here.")
+    st.caption("Rubric point 3 and half of point 5, verifiable here. Runs locally in "
+               "this console's own process, independent of the API.")
     code = st.text_area("Python to execute in the sandbox", height=120, value=(
         "import socket\n"
         "socket.setdefaulttimeout(3)\n"
@@ -378,11 +314,11 @@ with tabs[4]:
 # -------------------------------------------------------------------- AUDIT -
 with tabs[5]:
     st.subheader("Tamper-evident audit log")
-    ok, bad = audit.verify()
-    (st.success if ok else st.error)(
-        "Hash chain verified" if ok else f"Chain broken at record {bad}")
     n = st.slider("Records", 10, 300, 40)
-    recs = audit.tail(n)
+    a = api_get("/audit", n=n)
+    (st.success if a["chain_valid"] else st.error)(
+        "Hash chain verified" if a["chain_valid"] else f"Chain broken at record {a['first_bad_index']}")
+    recs = a["records"]
     if recs:
         st.dataframe(pd.DataFrame([{
             "time": time.strftime("%H:%M:%S", time.localtime(r["ts"])),

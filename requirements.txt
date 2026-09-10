@@ -33,3 +33,4 @@ pytest>=8.0
 
 # ---- Tier 5: test/inspection UI ----
 streamlit>=1.40
+requests>=2.31                # console talks to the API over loopback HTTP

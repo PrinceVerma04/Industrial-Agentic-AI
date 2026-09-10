@@ -39,6 +39,7 @@ def _startup():
 class AskRequest(BaseModel):
     goal: str
     max_iterations: int = 2
+    max_steps: int = 8
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -46,10 +47,32 @@ def ui():
     return (Path(__file__).resolve().parents[1] / "ui" / "index.html").read_text()
 
 
+def _edge_total() -> int:
+    from app.graphrag.schema import rel_types
+    total, seen = 0, set()
+    for rel, a, b in rel_types():
+        if (rel, a, b) in seen:
+            continue
+        seen.add((rel, a, b))
+        try:
+            r = store.rows(f"MATCH (x:{a})-[e:{rel}]->(y:{b}) RETURN count(e) AS c")
+            total += r[0]["c"] if r else 0
+        except Exception:
+            pass
+    return total
+
+
 @app.get("/health")
 def health():
+    node_counts = store.stats()
+    try:
+        vector_count = index.client.count("chunks").count
+    except Exception:
+        vector_count = 0
     return {"ok": True, "profile": manager.profile,
-            "graph": store.stats(), "tools": len(registry.all_tools())}
+            "graph": node_counts, "graph_nodes": sum(node_counts.values()),
+            "graph_edges": _edge_total(), "vector_chunks": vector_count,
+            "tools": len(registry.all_tools())}
 
 
 @app.get("/sovereignty")
@@ -78,11 +101,13 @@ def models():
 
 @app.post("/ask")
 def ask(req: AskRequest):
-    agent = Agent(manager, audit, max_iterations=req.max_iterations)
+    agent = Agent(manager, audit, max_iterations=req.max_iterations,
+                  max_steps=req.max_steps)
     r = agent.run(req.goal)
     return {"answer": r.answer, "iterations": r.iterations,
             "artifacts": r.artifacts, "decisions": r.decisions,
-            "steps": [{"tool": s.tool, "intent": s.intent, "ok": s.ok, "ms": s.ms}
+            "steps": [{"tool": s.tool, "intent": s.intent, "ok": s.ok, "ms": s.ms,
+                       "arguments": s.arguments, "output": str(s.output)[:4000]}
                       for s in r.steps]}
 
 
@@ -90,9 +115,25 @@ def ask(req: AskRequest):
 def search(q: str, k: int = 8):
     res = retriever.retrieve(q, k)
     return {"mode": res["plan"].mode, "why": res["plan"].reason,
+            "anchors": res["plan"].anchors,
             "nodes": res.get("nodes", []),
+            "communities": res.get("communities", []),
             "chunks": [{"doc_id": c.get("doc_id"), "page": c.get("page"),
-                        "text": c["text"][:400]} for c in res.get("chunks", [])]}
+                        "text": c["text"][:2500]} for c in res.get("chunks", [])]}
+
+
+@app.get("/graph/neighborhood")
+def graph_neighborhood(entity: str, hops: int = 2):
+    hits = store.find(entity.strip())
+    if not hits:
+        return {"found": False}
+    anchor = hits[0]
+    rows = store.neighborhood(anchor["type"], anchor["key"], hops=hops)
+    rows = [r for r in rows if r["key"] != anchor["key"]]
+    one_hop = {r["key"] for r in store.neighborhood(anchor["type"], anchor["key"], hops=1)
+               if r["key"] != anchor["key"]}
+    indirect = sorted(r["name"] for r in rows if r["key"] not in one_hop)
+    return {"found": True, "anchor": anchor, "rows": rows, "indirect_only": indirect}
 
 
 @app.get("/audit")
