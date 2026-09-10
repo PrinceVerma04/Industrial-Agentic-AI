@@ -182,27 +182,60 @@ rm -rf data/stores/graph && make index
 
 ---
 
-## Setup
+## Quick start on a fresh machine
+
+**Prerequisites:** Linux, Python 3.11, an NVIDIA GPU with ≥16 GB VRAM (a
+14B-class model needs ~11 GB resident — CPU-only will run but is very slow),
+and a current NVIDIA driver. No Docker, no root required for the app itself
+(root is only needed for the optional `make lockdown` host firewall).
 
 ```bash
-python3.11 -m venv .venv                                   # Python 3.11.15
-./.venv/bin/pip install torch --index-url .../cu128        # Blackwell sm_120
+# 1. Clone
+git clone https://github.com/PrinceVerma04/Industrial-Agentic-AI.git
+cd Industrial-Agentic-AI
+
+# 2. Install Ollama (the local model server) if you don't already have it
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 3. Create an isolated Python environment — nothing installs system-wide
+python3.11 -m venv .venv
+
+# 4. Install PyTorch matching your GPU
+#    Blackwell (RTX 50-series, sm_120) needs the CUDA 12.8 build:
+./.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu128
+#    Older NVIDIA GPUs (RTX 30/40-series etc.) can use the stable CUDA 12.4 build instead:
+#    ./.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu124
+
+# 5. Install the rest of the Python dependencies
 ./.venv/bin/pip install -r requirements.txt
-```
 
-Everything Python lives in `.venv/`. The only things outside it are Ollama
-(installed separately) and the model weights in `~/.ollama` — those are
-weights, not packages.
+# 6. Preflight check — confirms GPU, sandbox, and binaries are all in order
+make check
 
-```bash
-make check     # preflight: GPU, models, sandbox, binaries
-make pull      # pull the 'venue' model set (~24 GB)
+# 7. Pull the model set (~24 GB, one-time download — this is the only step
+#    that needs internet access; everything after this runs fully offline)
+make pull
 ```
 
 `data/corpus/`, `data/stores/`, `data/artifacts/`, and `data/workspace/` are
 gitignored — a fresh clone starts with an empty corpus. Add your own
 `.pdf`/`.txt`/`.md` documents to `data/corpus/` before indexing (images are
 read on demand by the vision tool but not auto-indexed).
+
+```bash
+# 8. Build the index from whatever you put in data/corpus/
+make index
+
+# 9. Run the tests to confirm everything installed correctly
+make test          # 70 tests, should complete in under a second
+
+# 10. Launch — port-checked, correctly sequenced (API first, then console)
+make start
+```
+
+Then open **http://127.0.0.1:8501** for the console, or call the API directly
+at **http://127.0.0.1:8077**. See [Running it](#running-it) below for what
+each `make` target does, and [API](#api) for the raw endpoints.
 
 ## Running it
 
