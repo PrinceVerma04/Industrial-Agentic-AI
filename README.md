@@ -333,3 +333,10 @@ tar czf models.tar.gz -C ~/.ollama models
 ```
 Then `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` and rehearse with Wi-Fi off.
 Do this in week 1, not week 8.
+
+## Contributors
+
+| Name | Email |
+|---|---|
+| Prince Verma | tovermaprince@gmail.com |
+| Moitrayee Pramanik | moitrayeepramanik@gmail.com |
