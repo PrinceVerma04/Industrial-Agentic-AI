@@ -96,6 +96,12 @@ class Agent:
             f"tool calls. Use at most {self.max_steps} steps. Prefer kb_search or "
             f"graph_query before answering from memory - you must ground claims in the "
             f"organisation's own documents.\n\n"
+            f"THIS MACHINE HAS NO INTERNET ACCESS, EVER - not now, not as a fallback. "
+            f"Never plan a step that searches the web, fetches a URL, or calls an "
+            f"external API; such a step will always fail. If kb_search/graph_query "
+            f"cannot find what the request needs, the correct plan is a single step "
+            f"that reports the knowledge base has nothing relevant - not a retry "
+            f"against the internet.\n\n"
             f"IMPORTANT - passing data between steps: you are writing all steps "
             f"BEFORE any of them run, so you cannot know their results. Reference an "
             f"earlier step's output with the placeholder {{{{step1}}}} inside a string "
@@ -202,6 +208,13 @@ class Agent:
               "content": f"Answer the request using ONLY the tool results below. "
                          f"Cite sources as [doc_id p.N] where available. If a document "
                          f"was generated, state its path.\n\n"
+                         f"If the tool results do not actually address the request - "
+                         f"empty results, every step failed, or the only material found "
+                         f"is about a different subject - you MUST say plainly that it "
+                         f"was not found in the knowledge base and there is no internet "
+                         f"access to fetch it. Do NOT present an unrelated document as if "
+                         f"it answers the request, and do NOT answer from your own "
+                         f"training knowledge instead of the retrieved material.\n\n"
                          f"REQUEST: {goal}\n\nTOOL RESULTS:\n{trace}"}])
         return out
 
