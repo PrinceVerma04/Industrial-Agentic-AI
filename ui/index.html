@@ -1,43 +1,159 @@
 <!doctype html><html><head><meta charset="utf-8"><title>Sovereign AI Workbench</title>
 <style>
-:root{--bg:#0d1117;--pan:#161b22;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;--ok:#3fb950;--bad:#f85149;--acc:#58a6ff}
-*{box-sizing:border-box}body{margin:0;font:14px/1.5 ui-sans-serif,system-ui;background:var(--bg);color:var(--fg)}
-header{padding:10px 16px;border-bottom:1px solid var(--bd);display:flex;gap:16px;align-items:center}
-h1{font-size:15px;margin:0;font-weight:600}
-.wrap{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px;height:calc(100vh - 49px)}
-.pan{background:var(--pan);border:1px solid var(--bd);border-radius:8px;padding:12px;overflow:auto}
-.pan h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0 0 10px}
-#log{white-space:pre-wrap;font:12px/1.55 ui-monospace,monospace}
-textarea{width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:13px ui-monospace,monospace;resize:vertical}
+:root{
+  --bg:#0d1117;--pan:#161b22;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;
+  --ok:#3fb950;--bad:#f85149;--acc:#58a6ff;--warn:#d29922;--chip:#1c2530;
+}
+:root[data-theme="light"]{
+  --bg:#f6f8fa;--pan:#ffffff;--bd:#d0d7de;--fg:#1f2328;--mut:#57606a;
+  --ok:#1a7f37;--bad:#cf222e;--acc:#0969da;--warn:#9a6700;--chip:#eef1f4;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 ui-sans-serif,system-ui;background:var(--bg);color:var(--fg);transition:background .2s,color .2s}
+header{padding:10px 16px;border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:center}
+h1{font-size:15px;margin:0;font-weight:600;flex:0 0 auto}
+.spacer{flex:1}
+.themebtn{background:var(--chip);color:var(--fg);border:1px solid var(--bd);border-radius:99px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:600}
+.wrap{display:grid;grid-template-columns:1fr 340px;gap:14px;padding:14px;max-width:1400px;margin:0 auto}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}}
+.pan{background:var(--pan);border:1px solid var(--bd);border-radius:10px;padding:14px;overflow:auto}
+.pan h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0 0 4px;display:flex;align-items:center;gap:6px}
+.hint{font-size:11.5px;color:var(--mut);margin:0 0 12px;line-height:1.45}
+#log{white-space:pre-wrap;font:12px/1.6 ui-monospace,monospace}
+#log .answer{font:13px/1.6 ui-sans-serif,system-ui;color:var(--fg);margin-bottom:10px;padding:10px;background:var(--chip);border-left:3px solid var(--acc);border-radius:4px}
+textarea{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:13px ui-monospace,monospace;resize:vertical}
 button{background:var(--acc);color:#04121f;border:0;border-radius:6px;padding:7px 13px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.55;cursor:default}
+button.ghost{background:transparent;color:var(--fg);border:1px solid var(--bd)}
 button.danger{background:var(--bad);color:#fff}
-.row{display:flex;gap:8px;margin-top:8px}
-.stat{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #21262d;font-size:12.5px}
+.row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.stat{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd);font-size:12.5px}
 .ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}
 .badge{padding:2px 7px;border-radius:99px;font-size:11px;border:1px solid var(--bd);color:var(--mut)}
-.dec{font:11.5px ui-monospace,monospace;padding:4px 0;border-bottom:1px solid #21262d;color:var(--mut)}
+.dec{font:11.5px ui-monospace,monospace;padding:4px 0;border-bottom:1px solid var(--bd);color:var(--mut)}
 .dec b{color:var(--acc);font-weight:600}
+
+/* --- pipeline animation --- */
+.pipeline{display:flex;gap:6px;margin:10px 0 4px;flex-wrap:wrap}
+.stage{flex:1;min-width:80px;padding:8px 6px;border-radius:8px;background:var(--chip);border:1px solid var(--bd);
+  text-align:center;font-size:11px;font-weight:600;color:var(--mut);position:relative;overflow:hidden;transition:all .25s}
+.stage .ico{display:block;font-size:15px;margin-bottom:2px}
+.stage.active{color:var(--acc);border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.stage.active::after{content:"";position:absolute;left:-40%;top:0;bottom:0;width:40%;
+  background:linear-gradient(90deg,transparent,rgba(88,166,255,.35),transparent);
+  animation:sweep 1.1s linear infinite}
+.stage.done{color:var(--ok);border-color:var(--ok)}
+.stage.fail{color:var(--bad);border-color:var(--bad)}
+@keyframes sweep{from{left:-40%}to{left:100%}}
+.steplog{margin-top:10px}
+.steprow{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed var(--bd);
+  font:12px/1.5 ui-monospace,monospace;opacity:0;transform:translateY(4px);animation:pop .35s forwards}
+@keyframes pop{to{opacity:1;transform:translateY(0)}}
+.dot{flex:0 0 auto;width:16px;text-align:center}
+.dot.ok{color:var(--ok)}.dot.fail{color:var(--bad)}
+.steprow .meta{color:var(--mut)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--bd);border-top-color:var(--acc);
+  border-radius:50%;animation:spin .7s linear infinite;vertical-align:-1px}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
-<header><h1>Sovereign On-Premise Agentic AI Workbench</h1>
-<span class="badge" id="prof">profile —</span><span class="badge">SIH26117 · MRPL</span></header>
+<header>
+  <h1>Sovereign On-Premise Agentic AI Workbench</h1>
+  <span class="badge" id="prof">profile —</span><span class="badge">SIH26117 · MRPL</span>
+  <span class="spacer"></span>
+  <button class="themebtn" id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
+</header>
 <div class="wrap">
   <div class="pan">
     <h2>Task</h2>
+    <p class="hint">Ask a question in plain English about the plant's equipment, topology or inspection records. <b>Run agent</b> plans and executes tool calls (graph + knowledge base + reasoning) and returns a cited answer. <b>Retrieve only</b> skips reasoning and just shows the raw graph/knowledge-base matches.</p>
     <textarea id="goal" rows="3" placeholder="e.g. Which units are affected if P-101A is isolated? Draft an approval note."></textarea>
-    <div class="row"><button onclick="ask()">Run agent</button><button onclick="search()">Retrieve only</button></div>
-    <h2 style="margin-top:16px">Output</h2><div id="log">ready.</div>
+    <div class="row">
+      <button id="runBtn" onclick="ask()">Run agent</button>
+      <button id="searchBtn" class="ghost" onclick="search()">Retrieve only</button>
+    </div>
+
+    <h2 style="margin-top:18px">Live progress</h2>
+    <p class="hint">Shows the agent's pipeline as it runs: plan the steps, retrieve from the graph/knowledge base, reason over results, and answer. Steps below light up as each one is confirmed by the API's response.</p>
+    <div class="pipeline" id="pipeline"></div>
+
+    <h2 style="margin-top:18px">Output</h2>
+    <p class="hint">The final grounded answer (citations like <code>[doc p.N]</code> point to source pages), followed by every tool call the agent made, in order, with timing and pass/fail.</p>
+    <div id="log">Ready — enter a task above and press Run agent.</div>
   </div>
   <div>
     <div class="pan" style="margin-bottom:12px">
-      <h2>Sovereignty</h2><div id="sov"></div>
+      <h2>Sovereignty</h2>
+      <p class="hint">Proof the workbench never phones home: live counters of outbound network attempts, whether they were blocked, and the integrity of the tamper-evident audit log.</p>
+      <div id="sov"></div>
       <div class="row"><button class="danger" onclick="canary()">Attempt external call</button></div>
     </div>
-    <div class="pan"><h2>Model routing</h2><div id="dec"></div></div>
+    <div class="pan"><h2>Model routing</h2>
+      <p class="hint">Which local model handled each planning/reasoning step and why (already loaded vs. freshly loaded, capability match, memory budget). Newest first.</p>
+      <div id="dec"></div>
+    </div>
   </div>
 </div>
 <script>
 const API='', $=id=>document.getElementById(id);
 const j=async(u,o)=>(await fetch(API+u,o)).json();
+
+/* ---------- theme ---------- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  $('themeBtn').textContent = t==='light' ? '☀️ Light' : '🌙 Dark';
+  localStorage.setItem('theme', t);
+}
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+(function initTheme(){
+  let t = 'dark';
+  try {
+    t = localStorage.getItem('theme') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  } catch(e) {}
+  applyTheme(t);
+})();
+
+/* ---------- pipeline animation ---------- */
+const STAGES = [
+  {k:'plan',   ico:'🧭', label:'Plan'},
+  {k:'retrieve', ico:'🔎', label:'Retrieve'},
+  {k:'reason', ico:'🧠', label:'Reason'},
+  {k:'answer', ico:'✅', label:'Answer'},
+];
+function renderPipeline(activeIdx, states){
+  $('pipeline').innerHTML = STAGES.map((s,i)=>{
+    const st = states && states[i] ? states[i] : (i<activeIdx?'done':(i===activeIdx?'active':''));
+    return `<div class="stage ${st}"><span class="ico">${s.ico}</span>${s.label}</div>`;
+  }).join('');
+}
+let pipelineTimer=null;
+function startPipelineAnim(){
+  let i=0; renderPipeline(0);
+  clearInterval(pipelineTimer);
+  pipelineTimer=setInterval(()=>{ i=(i+1)%STAGES.length; renderPipeline(i); }, 650);
+}
+function stopPipelineAnim(ok){
+  clearInterval(pipelineTimer);
+  renderPipeline(STAGES.length, STAGES.map(()=> ok ? 'done' : 'fail'));
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+/* reveal step rows one-by-one so the trace feels like it's happening live */
+async function revealSteps(container, rows){
+  container.innerHTML = '';
+  for (const html of rows){
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    container.appendChild(div.firstElementChild);
+    await sleep(180);
+  }
+}
+
+/* ---------- panels ---------- */
 function line(k,v,cls){return `<div class="stat"><span>${k}</span><span class="${cls||''}">${v}</span></div>`}
 async function refresh(){
   const s=await j('/sovereignty');
@@ -51,21 +167,55 @@ async function refresh(){
   $('dec').innerHTML=(m.decisions.slice(-12).reverse().map(d=>
     `<div class="dec"><b>${d.task}</b> → ${d.tag}<br><span>${d.reason}</span></div>`).join(''))||'<div class="dec">no calls yet</div>';
 }
+
 async function ask(){
-  $('log').textContent='running…';
-  const r=await j('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({goal:$('goal').value})});
-  $('log').textContent=r.answer+'\n\n--- steps ---\n'+
-    r.steps.map(s=>`[${s.ok?'ok':'FAIL'}] ${s.tool} (${s.ms}ms) ${s.intent}`).join('\n')+
-    (r.artifacts.length?'\n\n--- artifacts ---\n'+r.artifacts.join('\n'):'');
-  refresh();
+  const goal = $('goal').value.trim();
+  if(!goal) return;
+  $('runBtn').disabled = true; $('searchBtn').disabled = true;
+  $('log').innerHTML = '<span class="spin"></span> Running agent…';
+  startPipelineAnim();
+  try{
+    const r=await j('/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({goal})});
+    stopPipelineAnim(true);
+    const rows = r.steps.map(s=>
+      `<div class="steprow"><span class="dot ${s.ok?'ok':'fail'}">${s.ok?'✔':'✕'}</span>
+       <span><b>${s.tool}</b> <span class="meta">(${s.ms}ms)</span><br>${s.intent}</span></div>`);
+    $('log').innerHTML = `<div class="answer">${escapeHtml(r.answer)}</div><div class="steplog"></div>`;
+    await revealSteps($('log').querySelector('.steplog'), rows);
+    if(r.artifacts.length){
+      $('log').innerHTML += `<div style="margin-top:10px" class="meta">--- artifacts ---\n${r.artifacts.join('\n')}</div>`;
+    }
+  }catch(e){
+    stopPipelineAnim(false);
+    $('log').textContent = 'Error: ' + e;
+  }finally{
+    $('runBtn').disabled = false; $('searchBtn').disabled = false;
+    refresh();
+  }
 }
+
 async function search(){
-  const r=await j('/search?q='+encodeURIComponent($('goal').value));
-  $('log').textContent=`mode: ${r.mode}\nwhy : ${r.why}\n\nGRAPH NODES\n`+
-    r.nodes.map(n=>`  [${n.type}] ${n.name}`).join('\n')+'\n\nPASSAGES\n'+
-    r.chunks.map(c=>`  [${c.doc_id} p.${c.page}] ${c.text.slice(0,160)}…`).join('\n');
+  const goal = $('goal').value.trim();
+  if(!goal) return;
+  $('runBtn').disabled = true; $('searchBtn').disabled = true;
+  $('log').innerHTML = '<span class="spin"></span> Retrieving…';
+  startPipelineAnim();
+  try{
+    const r=await j('/search?q='+encodeURIComponent(goal));
+    stopPipelineAnim(true);
+    $('log').innerHTML =
+      `<div class="answer">mode: ${r.mode}<br>why: ${escapeHtml(r.why)}</div>`+
+      `<b>Graph nodes</b>\n`+r.nodes.map(n=>`  [${n.type}] ${n.name}`).join('\n')+
+      `\n\n<b>Passages</b>\n`+r.chunks.map(c=>`  [${c.doc_id} p.${c.page}] ${escapeHtml(c.text.slice(0,160))}…`).join('\n');
+  }catch(e){
+    stopPipelineAnim(false);
+    $('log').textContent = 'Error: ' + e;
+  }finally{
+    $('runBtn').disabled = false; $('searchBtn').disabled = false;
+  }
 }
+
 async function canary(){
   const r=await j('/sovereignty/canary',{method:'POST'});
   $('log').textContent=`CANARY: ${r.verdict}\n${r.detail}\n(${r.ms}ms)\n\n`+
@@ -73,5 +223,11 @@ async function canary(){
               :'Reached the internet. Run: sudo ./scripts/04_lockdown.sh on');
   refresh();
 }
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+renderPipeline(-1);
 refresh(); setInterval(refresh,4000);
 </script></body></html>
