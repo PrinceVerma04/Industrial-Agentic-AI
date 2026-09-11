@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,8 +65,23 @@ class Extractor:
         cached = self.cache.get(h)
         if cached is not None:
             return cached
-        raw, _ = self.manager.run_json(
-            "extract", [{"role": "user", "content": prompt}], extraction_schema())
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            raw, _ = self.manager.run_json("extract", messages, extraction_schema())
+        except json.JSONDecodeError:
+            # The chunk had more entities/relations than the token budget
+            # could hold and the JSON got cut off mid-string. Retry once
+            # with a much larger ceiling before giving up on this chunk -
+            # crashing the whole index build over one dense chunk is worse
+            # than skipping its extraction.
+            try:
+                raw, _ = self.manager.run_json(
+                    "extract", messages, extraction_schema(), num_predict=6000)
+            except json.JSONDecodeError:
+                print(f"[extract] giving up on chunk {chunk.chunk_id} "
+                      f"({chunk.doc_id} p.{chunk.page}): model output truncated "
+                      f"twice, skipping", file=sys.stderr)
+                return {"entities": [], "relations": []}
         clean = self._validate(raw)
         self.cache.put(h, clean)
         return clean
@@ -100,9 +116,16 @@ class Extractor:
         return {"entities": ents, "relations": rels}
 
     def ingest(self, store, chunks: list[Chunk]) -> dict:
-        n_e = n_r = 0
+        n_e = n_r = n_failed = 0
         for c in chunks:
-            out = self.extract(c)
+            try:
+                out = self.extract(c)
+            except Exception as e:
+                print(f"[extract] chunk {c.chunk_id} ({c.doc_id} p.{c.page}) "
+                      f"failed: {type(e).__name__}: {e} - skipping",
+                      file=sys.stderr)
+                n_failed += 1
+                continue
             for e in out["entities"]:
                 store.upsert_node(e["type"], e["key"], e["name"],
                                   e["attributes"], [c.provenance])
@@ -112,4 +135,4 @@ class Extractor:
                                  r["target"]["type"], r["target"]["key"],
                                  r["evidence"], [c.provenance]):
                     n_r += 1
-        return {"entities": n_e, "relations": n_r, "chunks": len(chunks)}
+        return {"entities": n_e, "relations": n_r, "chunks": len(chunks), "failed": n_failed}
