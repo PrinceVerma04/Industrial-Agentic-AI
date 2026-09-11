@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sovereign Agentic AI Workbench</title>
+<meta name="description" content="A self-hosted, air-gapped agentic AI workbench for confidential industrial work. Runs entirely on one consumer GPU — and proves it never phones home.">
+<style>
+:root{
+  --bg:#0b0d10; --bg2:#111418; --panel:#161a20; --panel2:#1b2027;
+  --bd:#262c34; --fg:#eef1f5; --mut:#9aa4b2; --acc:#6ea8fe; --acc2:#8b7cf6;
+  --ok:#3fb950; --bad:#f85149; --code:#0d1117; --shadow:rgba(0,0,0,.35);
+}
+:root[data-theme="light"]{
+  --bg:#f7f8fa; --bg2:#ffffff; --panel:#ffffff; --panel2:#f2f4f7;
+  --bd:#e2e6ec; --fg:#151a21; --mut:#5b6472; --acc:#2f6fed; --acc2:#7c5cf0;
+  --ok:#1a7f37; --bad:#cf222e; --code:#0d1117; --shadow:rgba(20,25,35,.08);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",ui-sans-serif,system-ui,sans-serif;transition:background .2s,color .2s}
+a{color:var(--acc)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+pre{background:var(--code);color:#e6edf3;padding:14px 16px;border-radius:10px;overflow:auto;font-size:13px;line-height:1.55}
+
+/* nav */
+nav{position:sticky;top:0;z-index:20;background:color-mix(in srgb, var(--bg) 85%, transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
+.navrow{display:flex;align-items:center;gap:18px;padding:12px 20px;max-width:1120px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+.brand .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb, var(--ok) 25%, transparent)}
+.navlinks{display:flex;gap:16px;font-size:14px;color:var(--mut);margin-left:8px}
+.navlinks a{color:var(--mut);text-decoration:none}
+.navlinks a:hover{color:var(--fg)}
+.navspace{flex:1}
+.themebtn{background:var(--panel2);color:var(--fg);border:1px solid var(--bd);border-radius:99px;padding:6px 13px;font-size:13px;cursor:pointer;font-weight:600}
+.ghbtn{background:var(--fg);color:var(--bg);border:0;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;text-decoration:none}
+@media (max-width:760px){.navlinks{display:none}}
+
+/* hero */
+.hero{padding:86px 20px 56px;text-align:center;background:
+  radial-gradient(700px 320px at 50% -80px, color-mix(in srgb, var(--acc) 18%, transparent), transparent 70%)}
+.badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--acc);background:color-mix(in srgb, var(--acc) 14%, transparent);border:1px solid color-mix(in srgb, var(--acc) 35%, transparent);padding:5px 12px;border-radius:99px;margin-bottom:20px}
+h1{font-size:clamp(30px,5vw,52px);line-height:1.08;margin:0 0 18px;font-weight:800;letter-spacing:-.02em}
+h1 span{background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{max-width:640px;margin:0 auto 30px;color:var(--mut);font-size:17px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{padding:11px 22px;border-radius:10px;font-weight:700;font-size:14.5px;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+.btn.primary{background:linear-gradient(90deg,var(--acc),var(--acc2));color:#04121f}
+.btn.ghost{background:var(--panel);color:var(--fg);border:1px solid var(--bd)}
+
+/* sections */
+section{padding:64px 0}
+.section-head{text-align:center;max-width:640px;margin:0 auto 36px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--acc)}
+h2{font-size:clamp(24px,3.4vw,34px);margin:8px 0 10px;font-weight:800;letter-spacing:-.01em}
+.section-head p{color:var(--mut);margin:0}
+
+/* feature grid */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:860px){.grid{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:20px;box-shadow:0 8px 24px var(--shadow)}
+.card .ico{font-size:22px;display:block;margin-bottom:10px}
+.card h3{margin:0 0 6px;font-size:15.5px}
+.card p{margin:0;color:var(--mut);font-size:13.8px;line-height:1.55}
+.card .where{margin-top:10px;font-size:11.5px;color:var(--mut)}
+.card .where code{background:var(--panel2);padding:1px 6px;border-radius:5px;border:1px solid var(--bd)}
+
+/* filter / mode explainer */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:720px){.pair{grid-template-columns:1fr}}
+.modecard{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:22px}
+.modecard h3{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:8px}
+.modecard .tag{font-size:11px;font-weight:700;padding:2px 9px;border-radius:99px;border:1px solid var(--bd);color:var(--mut)}
+.modecard ul{margin:12px 0 0;padding-left:18px;color:var(--mut);font-size:13.8px}
+.modecard li{margin-bottom:6px}
+.modecard .when{margin-top:14px;padding:10px 12px;border-radius:9px;background:var(--panel2);font-size:13px;border-left:3px solid var(--acc)}
+
+/* architecture / mermaid */
+.diagram{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:20px;overflow-x:auto}
+.mermaid{display:flex;justify-content:center}
+
+/* demo */
+.demo{background:var(--panel);border:1px solid var(--bd);border-radius:16px;overflow:hidden;box-shadow:0 12px 30px var(--shadow)}
+.demo-top{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--bd);background:var(--panel2)}
+.demo-top .d{width:10px;height:10px;border-radius:50%}
+.demo-top .d1{background:#ff5f57}.demo-top .d2{background:#febc2e}.demo-top .d3{background:#28c840}
+.demo-top .lbl{margin-left:8px;font-size:12.5px;color:var(--mut)}
+.demo-body{padding:20px}
+.demo-q{font:14px ui-monospace,monospace;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;min-height:20px}
+.caret{display:inline-block;width:2px;height:14px;background:var(--acc);vertical-align:-2px;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.pipeline{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+.stage{flex:1;min-width:100px;padding:10px 8px;border-radius:9px;background:var(--panel2);border:1px solid var(--bd);text-align:center;font-size:12px;font-weight:700;color:var(--mut);position:relative;overflow:hidden;transition:all .25s}
+.stage .ico{display:block;font-size:17px;margin-bottom:3px}
+.stage.active{color:var(--acc);border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.stage.active::after{content:"";position:absolute;left:-40%;top:0;bottom:0;width:40%;background:linear-gradient(90deg,transparent,color-mix(in srgb, var(--acc) 40%, transparent),transparent);animation:sweep 1.1s linear infinite}
+.stage.done{color:var(--ok);border-color:var(--ok)}
+@keyframes sweep{from{left:-40%}to{left:100%}}
+.steps{margin-top:6px}
+.steprow{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed var(--bd);font:12.5px/1.5 ui-monospace,monospace;opacity:0;transform:translateY(4px);animation:pop .35s forwards}
+@keyframes pop{to{opacity:1;transform:translateY(0)}}
+.dot{flex:0 0 auto;width:16px;text-align:center;color:var(--ok)}
+.steprow .meta{color:var(--mut)}
+.answer{margin-top:12px;padding:12px 14px;border-radius:9px;background:var(--panel2);border-left:3px solid var(--acc);font-size:13.5px;opacity:0;animation:pop .4s forwards}
+.replaybtn{margin-top:14px;background:var(--panel2);color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.disclaimer{margin-top:14px;font-size:12px;color:var(--mut)}
+
+/* sovereignty strip */
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:760px){.strip{grid-template-columns:1fr 1fr}}
+.stat{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px;text-align:center}
+.stat .n{font-size:22px;font-weight:800;color:var(--ok)}
+.stat .k{font-size:12px;color:var(--mut);margin-top:2px}
+
+footer{border-top:1px solid var(--bd);padding:34px 0;color:var(--mut);font-size:13px}
+.footrow{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:center}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="navrow">
+    <div class="brand"><span class="dot"></span> Sovereign AI Workbench</div>
+    <div class="navlinks">
+      <a href="#how">How it works</a>
+      <a href="#modes">Modes</a>
+      <a href="#demo">Demo</a>
+      <a href="#sovereignty">Sovereignty</a>
+    </div>
+    <div class="navspace"></div>
+    <button class="themebtn" id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
+    <a class="ghbtn" href="https://github.com/PrinceVerma04/Industrial-Agentic-AI" target="_blank" rel="noopener">GitHub →</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">SIH 2026 · SIH26117 · MRPL</span>
+    <h1>An agentic AI workbench that<br><span>never leaves your machine</span></h1>
+    <p class="sub">A self-hosted, air-gapped agent for confidential industrial work — plans, retrieves from a real knowledge graph, reasons, runs code in a sandbox, and drafts documents. Runs on one consumer GPU, and <em>proves</em> it never phones home instead of just claiming to.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/PrinceVerma04/Industrial-Agentic-AI" target="_blank" rel="noopener">View source on GitHub</a>
+      <a class="btn ghost" href="https://github.com/PrinceVerma04/Industrial-Agentic-AI#how-it-works" target="_blank" rel="noopener">Read the architecture</a>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Capabilities</div>
+      <h2>Five requirements, met by execution — not slides</h2>
+      <p>Each capability below is a working code path in the repo, not a design doc.</p>
+    </div>
+    <div class="grid">
+      <div class="card"><span class="ico">🧩</span><h3>Domain portability</h3><p>The entity/relation schema is a YAML ontology pack, not hard-coded classes — point it at a new industry without touching code.</p><div class="where">→ <code>config/ontology.yaml</code></div></div>
+      <div class="card"><span class="ico">🧭</span><h3>Automatic model routing</h3><p>A declarative manifest + VRAM-aware LRU manager picks the right local model per task and swaps under a fixed memory budget — every decision logged.</p><div class="where">→ <code>config/models.yaml</code>, <code>app/router/</code></div></div>
+      <div class="card"><span class="ico">🤖</span><h3>Agentic tasks end-to-end</h3><p>A Plan → Execute → Critique → Synthesise loop that produces real <code>.docx</code>/<code>.pptx</code>/<code>.xlsx</code> artifacts, not just chat text.</p><div class="where">→ <code>app/agent/loop.py</code></div></div>
+      <div class="card"><span class="ico">🛡️</span><h3>Sandboxed code execution</h3><p>Generated code runs inside a network-isolated namespace, verified before its output is trusted.</p><div class="where">→ <code>app/tools/sandbox.py</code></div></div>
+      <div class="card"><span class="ico">🖼️</span><h3>Multimodal understanding</h3><p>Scanned inspection sheets are rasterised, OCR'd on CPU, and read by a local vision-language model for handwriting and diagrams.</p><div class="where">→ <code>app/ingest/pipeline.py</code></div></div>
+      <div class="card"><span class="ico">🔒</span><h3>Proof of no external calls</h3><p>A live egress monitor, an on-demand canary check, and a hash-chained audit log — sovereignty as a measurement, not a promise.</p><div class="where">→ <code>app/sentinel/</code></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="how" style="background:var(--bg2)">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Working section</div>
+      <h2>How a query actually moves through the system</h2>
+      <p>Every box below is a real module in the repo — nothing here is aspirational.</p>
+    </div>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+    U["Your question\n(plain English)"] --> API["FastAPI orchestrator\nloopback-only :8077"]
+    API --> PLAN["Plan\nLLM emits a typed tool-call list"]
+    PLAN --> GQ["Graph query\nKùzu knowledge graph"]
+    PLAN --> KB["Knowledge-base search\nQdrant vector index"]
+    GQ --> REASON["Reason + Critique\nwas the goal actually met?"]
+    KB --> REASON
+    REASON -- "not yet" --> PLAN
+    REASON -- "yes" --> ANSWER["Synthesise\ncited answer / drafted document"]
+    ANSWER --> OUT["Returned to you\nwith full step trace + citations"]
+
+    subgraph guard["Always true, every step"]
+      SENTINEL["Sentinel: 0 external connections\nhash-chained audit log"]
+    end
+    API -.watched by.- SENTINEL
+      </pre>
+    </div>
+  </div>
+</section>
+
+<section id="modes">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Two ways to ask</div>
+      <h2>Run agent vs. Retrieve only</h2>
+      <p>The workbench's dashboard exposes both — here's what each one actually does, and when to reach for it.</p>
+    </div>
+    <div class="pair">
+      <div class="modecard">
+        <h3>🤖 Run agent <span class="tag">POST /ask</span></h3>
+        <p style="color:var(--mut);font-size:13.8px;margin:0">The full agentic pipeline. Plans a sequence of tool calls, executes them, critiques whether the goal was met, retries if not, then writes a cited, synthesised answer.</p>
+        <ul>
+          <li>Best for real questions and drafting tasks</li>
+          <li>Can generate documents (<code>.docx</code>/<code>.xlsx</code>)</li>
+          <li>Slower — multiple LLM round-trips</li>
+          <li>Refuses rather than hallucinates when nothing relevant is found</li>
+        </ul>
+        <div class="when"><b>Use it</b> when you want a finished answer or artifact, not just raw matches.</div>
+      </div>
+      <div class="modecard">
+        <h3>🔎 Retrieve only <span class="tag">GET /search</span></h3>
+        <p style="color:var(--mut);font-size:13.8px;margin:0">Skips LLM synthesis entirely. Auto-selects a retrieval mode (vector, local, or graph traversal) and returns the raw evidence — matched nodes, community summaries, and cited passages.</p>
+        <ul>
+          <li>No reasoning step, so no hallucination risk</li>
+          <li>Fast — a single retrieval call</li>
+          <li>Shows exactly what's indexed and retrievable</li>
+          <li>Good for verifying a fresh index before trusting an answer</li>
+        </ul>
+        <div class="when"><b>Use it</b> to sanity-check the evidence, especially right after re-indexing new documents.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="demo" style="background:var(--bg2)">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">See it move</div>
+      <h2>What a run looks like</h2>
+      <p>This is a recorded sample, replayed on this page — this site is static and has no backend. The real workbench runs entirely on your own hardware; there is nothing to query over the internet.</p>
+    </div>
+    <div class="demo">
+      <div class="demo-top"><span class="d d1"></span><span class="d d2"></span><span class="d d3"></span><span class="lbl">workbench — sample run</span></div>
+      <div class="demo-body">
+        <div class="demo-q" id="demoQ">&nbsp;</div>
+        <div class="pipeline" id="pipeline"></div>
+        <div class="steps" id="steps"></div>
+        <div id="answerBox"></div>
+        <button class="replaybtn" id="replayBtn" onclick="playDemo()">▶ Replay</button>
+        <div class="disclaimer">Sample query and output shown are from an actual run against the synthetic demo corpus shipped in the repo — replayed here as a scripted animation, not a live call.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="sovereignty">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Trust, measured</div>
+      <h2>Sovereignty is proven live, not claimed</h2>
+      <p>A dashboard panel on the running workbench shows these numbers in real time while you use it.</p>
+    </div>
+    <div class="strip">
+      <div class="stat"><div class="n">0</div><div class="k">External connections</div></div>
+      <div class="stat"><div class="n">0</div><div class="k">Blocked attempts</div></div>
+      <div class="stat"><div class="n">netns</div><div class="k">Sandbox isolation</div></div>
+      <div class="stat"><div class="n">VALID</div><div class="k">Audit chain</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap footrow">
+    <span>Sovereign On-Premise Agentic AI Workbench — built for SIH26117 (MRPL).</span>
+    <span><a href="https://github.com/PrinceVerma04/Industrial-Agentic-AI" target="_blank" rel="noopener">github.com/PrinceVerma04/Industrial-Agentic-AI</a></span>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+/* ---------- theme ---------- */
+function currentMermaidTheme(){
+  return (document.documentElement.getAttribute('data-theme') || 'dark') === 'light' ? 'default' : 'dark';
+}
+function applyTheme(t, opts){
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('themeBtn').textContent = t === 'light' ? '☀️ Light' : '🌙 Dark';
+  try { localStorage.setItem('theme', t); } catch(e) {}
+  if(!opts || !opts.skipMermaid) initMermaid();
+}
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+(function initTheme(){
+  let t = 'dark';
+  try {
+    t = localStorage.getItem('theme') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  } catch(e) {}
+  applyTheme(t, {skipMermaid:true});
+})();
+
+function initMermaid(){
+  mermaid.initialize({startOnLoad:false, theme: currentMermaidTheme(), securityLevel:'loose'});
+  const el = document.querySelector('.mermaid');
+  if(el && el.getAttribute('data-raw') === null){
+    el.setAttribute('data-raw', el.textContent);
+  }
+  if(el){ el.removeAttribute('data-processed'); el.innerHTML = el.getAttribute('data-raw'); }
+  mermaid.run({querySelector:'.mermaid'});
+}
+initMermaid();
+
+/* ---------- scripted demo ---------- */
+const DEMO_QUERY = "Which units are affected if P-101A is isolated?";
+const STAGES = [
+  {ico:'🧭', label:'Plan'},
+  {ico:'🔎', label:'Retrieve'},
+  {ico:'🧠', label:'Reason'},
+  {ico:'✅', label:'Answer'},
+];
+const DEMO_STEPS = [
+  {tool:'graph_query', ms:7,  intent:"Query the knowledge graph for 'P-101A' and its immediate neighbours."},
+  {tool:'graph_query', ms:8,  intent:"Traverse dependencies one hop further from P-101A."},
+  {tool:'kb_search',   ms:57, intent:"Search the knowledge base for text about P-101A's role in the unit."},
+];
+const DEMO_ANSWER = "If you remove P-101 from the pipeline, it would affect the feed to E-204, and transitively, to V-1201, unless P-101B is brought into service first <b>[piping_topology_unit3 p.1]</b>.";
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function renderPipeline(activeIdx, done){
+  document.getElementById('pipeline').innerHTML = STAGES.map((s,i)=>{
+    const st = done ? 'done' : (i<activeIdx?'done':(i===activeIdx?'active':''));
+    return `<div class="stage ${st}"><span class="ico">${s.ico}</span>${s.label}</div>`;
+  }).join('');
+}
+let demoRunning = false;
+async function playDemo(){
+  if(demoRunning) return;
+  demoRunning = true;
+  const btn = document.getElementById('replayBtn'); btn.disabled = true;
+  document.getElementById('demoQ').innerHTML = '<span class="caret"></span>';
+  document.getElementById('steps').innerHTML = '';
+  document.getElementById('answerBox').innerHTML = '';
+  renderPipeline(-1);
+
+  // type the query
+  let typed = '';
+  for(const ch of DEMO_QUERY){
+    typed += ch;
+    document.getElementById('demoQ').innerHTML = typed + '<span class="caret"></span>';
+    await sleep(22);
+  }
+  await sleep(300);
+
+  // stage 0: plan
+  renderPipeline(0);
+  await sleep(700);
+
+  // stage 1: retrieve — reveal steps
+  renderPipeline(1);
+  for(const s of DEMO_STEPS){
+    const row = document.createElement('div');
+    row.className = 'steprow';
+    row.innerHTML = `<span class="dot">✔</span><span><b>${s.tool}</b> <span class="meta">(${s.ms}ms)</span><br>${s.intent}</span>`;
+    document.getElementById('steps').appendChild(row);
+    await sleep(280);
+  }
+
+  // stage 2: reason
+  renderPipeline(2);
+  await sleep(650);
+
+  // stage 3: answer
+  renderPipeline(3, true);
+  const ans = document.createElement('div');
+  ans.className = 'answer';
+  ans.innerHTML = DEMO_ANSWER;
+  document.getElementById('answerBox').appendChild(ans);
+
+  btn.disabled = false;
+  demoRunning = false;
+}
+// autoplay once on load
+window.addEventListener('load', ()=> setTimeout(playDemo, 500));
+</script>
+</body>
+</html>
